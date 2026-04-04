@@ -72,6 +72,7 @@
 .bucket_list {
     max-height: 100px;
     overflow-y: auto;
+    width: auto !important;
 }
 
 /* ---------- Project-type Dropdown ---------- */
@@ -245,6 +246,7 @@
 .dash-table tbody tr td {
     padding: 4.8px 0px 4.8px 4px;
     vertical-align: middle;
+    text-align: center;
     font-size: 12px;
     line-height: 1.5;
 }
@@ -306,4 +308,21 @@
 @keyframes spin {
     from { transform: rotate(0deg); }
     to   { transform: rotate(360deg); }
+}
+
+/* ---------- Center-aligned columns ---------- */
+/* .table1_quote,
+.table1_work,
+.table1_print,
+.table2_item,
+.table2_print {
+    text-align: center !important;
+} */
+
+/* Black eye & print icons */
+.table1_work a,
+.table1_print a,
+.table2_print a {
+    /* text-align: center !important; */
+    color: black !important;
 }

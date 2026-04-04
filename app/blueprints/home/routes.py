@@ -22,6 +22,7 @@ from app.models.master import (
     fluidState,
     addressMaster,
     companyMaster,
+    engineerMaster,
 )
 from app.models.transactional import (
     itemMaster,
@@ -39,6 +40,7 @@ from app.models.transactional import (
     accessoriesData,
     itemNotesData,
     addressProject,
+    engineerProject,
 )
 from app.blueprints.home.helpers import (
     _PROJECT_LOAD_ONLY,
@@ -55,6 +57,7 @@ from app.blueprints.home.helpers import (
     resolve_project_bucket,
     resolve_selected_project,
     serialize_item,
+    serialize_project,
 )
 
 
@@ -294,6 +297,143 @@ def get_items_only(proj_id):
 
     items = get_items_for_project(proj_id, search_type, search_value)
     return jsonify({"items": [serialize_item(i) for i in items]})
+
+
+# ---------------------------------------------------------------------------
+# /load_projects — AJAX endpoint for dynamic project table
+# ---------------------------------------------------------------------------
+
+@bp.route('/load_projects', methods=['GET'])
+@login_required
+def load_projects():
+    """
+    Return a JSON list of projects for the dashboard project table.
+
+    Replaces the server-rendered {% include 'home/project_rows.html' %} so the
+    table refreshes without a full page reload (bucket change, search, initial load).
+
+    Query params:
+        quote_range  — bucket string like 'Q26000 - Q26099', 'All', 'Obsolete'.
+                       Saved to session when supplied; falls back to session /
+                       last-known bucket otherwise.
+        search_type  — 'quote' | 'customer' | 'region' | 'engineer'
+        search_value — raw search string
+
+    User-type behaviour mirrors /home exactly:
+        fccUser + projType=1  → bucket/live-project query
+        fccUser + projType=2  → testcase pattern filter
+        non-fcc / auth user   → own projects only
+    """
+    user = current_user
+    use_quote_order = False
+    suffix = year = None
+
+    # ── 1. Build base project query (same logic as /home) ─────────────────
+    if user.fccUser:
+        user_ids_subq = get_fcc_user_ids()
+
+        if not user.projType:
+            user.projType = 1
+
+        if user.projType == 1:
+            last_Q26 = get_last_Q26()
+            last_Q25 = get_last_Q25()
+
+            # Resolve selected bucket (mirrors resolve_project_bucket but
+            # accepts 'quote_range' param instead of 'set-projects')
+            quote_range = request.args.get('quote_range')
+            if quote_range:
+                session['selected_bucket'] = quote_range
+                selected_bucket = quote_range
+            elif session.get('selected_bucket'):
+                selected_bucket = session['selected_bucket']
+            else:
+                # Derive default from latest Q26 project (same as resolve_project_bucket)
+                if last_Q26:
+                    last_num = int(last_Q26[3:])
+                    bucket_start = (last_num // 100) * 100
+                    bucket_end   = bucket_start + 99
+                    selected_bucket = (
+                        f"Q26{str(bucket_start).zfill(4)} - "
+                        f"Q26{str(bucket_end).zfill(4)}"
+                    )
+                else:
+                    selected_bucket = "Obsolete"
+                session['selected_bucket'] = selected_bucket
+
+            obsolete = selected_bucket == 'Obsolete'
+            show_all = selected_bucket == 'All'
+
+            query_, suffix, year = build_project_query(
+                user_ids_subq, selected_bucket, obsolete, show_all
+            )
+            use_quote_order = not obsolete
+
+        else:
+            # projType == 2 — testcase projects
+            query_ = (
+                db.session.query(projectMaster)
+                .options(
+                    load_only(*_PROJECT_LOAD_ONLY),
+                    selectinload(projectMaster.region).load_only(regionMaster.name),
+                    selectinload(projectMaster.industry).load_only(industryMaster.name),
+                    selectinload(projectMaster.user).load_only(
+                        userMaster.email, userMaster.fccUser
+                    ),
+                )
+                .filter(
+                    projectMaster.createdById.in_(user_ids_subq),
+                    or_(
+                        projectMaster.quoteNo.like('Q24TC%'),
+                        projectMaster.quoteNo.like('Q25TC%'),
+                        projectMaster.quoteNo.like('Q26TC%'),
+                        projectMaster.quoteNo.like('T%'),
+                    ),
+                )
+            )
+
+    else:
+        # Non-FCC / regular authenticated user — own projects only
+        query_ = (
+            db.session.query(projectMaster)
+            .options(
+                load_only(*_PROJECT_LOAD_ONLY),
+                selectinload(projectMaster.region).load_only(regionMaster.name),
+                selectinload(projectMaster.industry).load_only(industryMaster.name),
+                selectinload(projectMaster.user).load_only(
+                    userMaster.email, userMaster.fccUser
+                ),
+            )
+            .filter(projectMaster.user == current_user)
+        )
+
+    # ── 2. Apply search ────────────────────────────────────────────────────
+    search_type  = request.args.get('search_type')
+    search_value = request.args.get('search_value')
+    if search_type and search_value:
+        query_ = apply_project_search(query_, search_type, search_value)
+
+    # ── 3. Add extra eager-load options needed by serialize_project ────────
+    #   customer_name → project_address → address → company
+    #   engineer_name → project_engineer → engineer
+    query_ = query_.options(
+        selectinload(projectMaster.project_address)
+            .selectinload(addressProject.address)
+            .selectinload(addressMaster.company)
+            .load_only(companyMaster.name),
+        selectinload(projectMaster.project_engineer)
+            .selectinload(engineerProject.engineer)
+            .load_only(engineerMaster.name),
+    )
+
+    # ── 4. Execute ─────────────────────────────────────────────────────────
+    if use_quote_order:
+        projects = query_.order_by(year.desc(), suffix.desc()).all()
+    else:
+        projects = query_.order_by(projectMaster.id.desc()).all()
+
+    # ── 5. Serialize and return ────────────────────────────────────────────
+    return jsonify({"projects": [serialize_project(p) for p in projects]})
 
 
 # ---------------------------------------------------------------------------

@@ -428,6 +428,31 @@ def serialize_item(item: itemMaster) -> dict:
     }
 
 
+def serialize_project(project) -> dict:
+    """
+    Convert a projectMaster ORM object (with project_address, project_engineer,
+    region, and industry pre-loaded) to the JSON dict consumed by
+    updateProjectsList() in dashboard.js.
+
+    All keys must exactly match what the JS expects.
+    """
+    has_engineer = bool(project.project_engineer)
+    return {
+        "id":           project.id,
+        "quoteNo":      "TBA" if project.quoteNo is None else project.quoteNo,
+        "customerName": project.customer_name or "N/A",
+        "enquiryRef":   project.enquiryRef or "",
+        "receiptDate":  str(project.receiptDate.date()) if has_engineer and project.receiptDate else "N/A",
+        "dueDate":      str(project.bidDueDate.date()) if has_engineer and project.bidDueDate else "N/A",
+        "region":       project.region.name if has_engineer and project.region else "N/A",
+        "industry":     project.industry.name if has_engineer and project.industry else "N/A",
+        "engineerName": project.engineer_name or "N/A",
+        "status":       project.status or "",
+        "workOrderNo":  project.workOderNo or "",
+        "projectRef":   project.projectRef or "",
+    }
+
+
 def get_items_for_project(project_id: int, search_type: str | None = None,
                           search_value: str | None = None) -> list:
     """

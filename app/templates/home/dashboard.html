@@ -105,28 +105,24 @@
                         {# Project type selector (FCC only) #}
                         {% if user.fccUser %}
                         {# TODO: implement 'submitProjType' route (POST /project/type/proj-<proj_id>/item-<item_id>) — saves selected project type (Live/Testcases) #}
-                        <form id="projForm" action="#" method="POST">
-                            <select name="proj-type" class="project-type form-control"
-                                    onchange="allowNavigation=true;">
+                        <div id="projForm">
+                            <select name="proj-type" class="project-type">
                                 <option value="1" {% if user.projType == 1 %}selected{% endif %}>Live</option>
                                 <option value="2" {% if user.projType == 2 %}selected{% endif %}>Testcases</option>
                             </select>
-                        </form>
+                        </div>
                         {% endif %}
 
                         {# Project bucket selector (FCC live projects only) #}
                         {% if user.fccUser and user.projType == 1 %}
-                        <form id="projForm" action="{{ url_for('home.home', proj_id=item.project.id, item_id=item.id) }}"> {# switch for dynamic upload#}
-                            <input type="hidden" name="reload_source" value="project_dropdown">
-                            <select name="set-projects" class="form-control bucket_list"
-                                    onchange="allowNavigation=true; this.form.submit()">
-                                {% for projno in all_buckets %}
-                                <option value="{{ projno }}" {% if selected_bucket == projno %}selected{% endif %}>
-                                    {{ projno }}
-                                </option>
-                                {% endfor %}
-                            </select>
-                        </form>
+                        <select id="bucketSelect" class="bucket_list"
+                                onchange="allowNavigation=true; loadProjects(this.value)">
+                            {% for projno in all_buckets %}
+                            <option value="{{ projno }}" {% if selected_bucket == projno %}selected{% endif %}>
+                                {{ projno }}
+                            </option>
+                            {% endfor %}
+                        </select>
                         {% endif %}
 
                         {# Run all items (Testcases only) #}
@@ -180,7 +176,12 @@
                 </tr>
             </thead>
             <tbody id="projectlist">
-                {% include 'home/project_rows.html' %}
+                {# Populated dynamically by loadProjects() in dashboard.js #}
+                <tr id="projectsLoader">
+                    <td colspan="100%" style="text-align:center;padding:14px;">
+                        <div class="spinner" style="width:20px;height:20px;border-width:3px;margin:0 auto;"></div>
+                    </td>
+                </tr>
             </tbody>
         </table>
     </div>

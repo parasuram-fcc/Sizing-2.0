@@ -15,6 +15,7 @@ let projectsearchType = 'customer';
 let itemsearchType = 'tagNo';
 let debounceTimer;
 let currentRequestId = 0;
+let projectLoadRequestId = 0;
 
 document.addEventListener('DOMContentLoaded', function () {
     adminUser        = document.getElementById('adminUser').value;
@@ -82,22 +83,20 @@ function liveSearch(row_type) {
     }
 
     debounceTimer = setTimeout(() => {
-        const requestId = ++currentRequestId;
-
-        let url = (row_type === 'project') ? '/home' : window.location.pathname;
-        url += `?type=${row_type}&search_type=${searchType}&search_value=${value}`;
-
-        fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } })
-            .then(res => (row_type === 'project') ? res.text() : res.json())
-            .then(data => {
-                if (requestId !== currentRequestId) return;
-                if (row_type === 'project') {
-                    $(".test").colResizable({ disable: true });
-                    document.getElementById("projectlist").innerHTML = data;
-                } else if (row_type === 'item') {
+        if (row_type === 'project') {
+            // loadProjects() reads search input from DOM internally
+            loadProjects();
+        } else if (row_type === 'item') {
+            const requestId = ++currentRequestId;
+            let url = window.location.pathname;
+            url += `?type=item&search_type=${searchType}&search_value=${value}`;
+            fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } })
+                .then(res => res.json())
+                .then(data => {
+                    if (requestId !== currentRequestId) return;
                     updateItemsList(data.items);
-                }
-            });
+                });
+        }
     }, 300);
 }
 
@@ -168,6 +167,104 @@ function updateItemsList(items) {
     });
 
     attachItemRowHandlers();
+}
+
+/* =================== PROJECTS =================== */
+
+/**
+ * Render project rows into #projectlist.
+ * selectedProjId — highlight the matching row (from URL or first-load).
+ */
+function updateProjectsList(projects, selectedProjId) {
+    const tbody = document.getElementById("projectlist");
+    tbody.innerHTML = "";
+
+    if (!projects || projects.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="100%" style="text-align:center;padding:12px;color:#666;">No projects to display</td></tr>`;
+        return;
+    }
+
+    projects.forEach(proj => {
+        const isSelected  = selectedProjId && String(proj.id) === String(selectedProjId);
+        const printPage   = proj.projectRef === 'TESTCASES' ? 'valve_sizing_all_items' : 'generate_csv_project';
+
+        const row = `
+        <tr class="project-row${isSelected ? ' selected-row-project' : ''}"
+            data-projid="${proj.id}" style="cursor:pointer">
+            <td class="table1_quote">${proj.quoteNo}</td>
+            <td class="table1_customer pdl-4">${proj.customerName}</td>
+            <td class="table1_enquiry pdl-4">${proj.enquiryRef}</td>
+            <td class="table1_receipt pdl-4">${proj.receiptDate}</td>
+            <td class="table1_due pdl-4">${proj.dueDate}</td>
+            <td class="table1_region pdl-4">${proj.region}</td>
+            <td class="table1_industry pdl-4">${proj.industry}</td>
+            <td class="table1_engineer pdl-4">${proj.engineerName}</td>
+            <td class="table1_status pdl-4">${proj.status}</td>
+            <td class="table1_work pdl-4">${proj.workOrderNo}</td>
+            <td class="table1_work">
+                <a class="nav-dynamic" data-page="projectRevisionView" href="#">
+                    <i class="fa-solid fa-eye"></i>
+                </a>
+            </td>
+            <td class="table1_print">
+                <a class="nav-dynamic" data-page="${printPage}" href="#">
+                    <i class="fa-solid fa-print"></i>
+                </a>
+            </td>
+        </tr>`;
+        tbody.insertAdjacentHTML("beforeend", row);
+    });
+}
+
+/**
+ * Fetch projects from /load_projects and render them.
+ * quoteRange — bucket string; if omitted, server uses the session value.
+ */
+function resetItemTable() {
+    document.getElementById("itemsTableBody").innerHTML = `
+        <tr>
+            <td colspan="100%" style="text-align:center;padding:12px;color:#666;">
+                Select Project to display items
+            </td>
+        </tr>`;
+}
+
+function loadProjects(quoteRange) {
+    const tbody = document.getElementById("projectlist");
+    const requestId = ++projectLoadRequestId;
+
+    // Reset item table when switching buckets or on initial no-selection load
+    if (quoteRange) resetItemTable();
+
+    // Show spinner while loading
+    tbody.innerHTML = `
+        <tr><td colspan="100%" style="text-align:center;padding:14px;">
+            <div class="spinner" style="width:20px;height:20px;border-width:3px;margin:0 auto;"></div>
+        </td></tr>`;
+
+    const params = new URLSearchParams();
+    if (quoteRange) params.append('quote_range', quoteRange);
+
+    const searchValue = document.getElementById("search_input").value.trim();
+    if (searchValue) {
+        params.append('search_type',  projectsearchType);
+        params.append('search_value', searchValue);
+    }
+
+    const qs  = params.toString();
+    const url = '/load_projects' + (qs ? '?' + qs : '');
+
+    fetch(url)
+        .then(res => res.json())
+        .then(data => {
+            if (requestId !== projectLoadRequestId) return;   // stale response
+            const { projectId } = getCurrentIds();
+            updateProjectsList(data.projects, projectId);
+        })
+        .catch(err => {
+            console.error("Project load error:", err);
+            tbody.innerHTML = `<tr><td colspan="100%" style="text-align:center;padding:12px;color:#c00;">Error loading projects</td></tr>`;
+        });
 }
 
 function selectItemRow(itemId) {
@@ -734,21 +831,18 @@ document.getElementById("projectlist").addEventListener("click", function (e) {
         .finally(() => { document.getElementById("itemsLoader").style.display = "none"; });
 });
 
-/* Initial page load — populate item table from URL */
+/* Initial page load — populate project table, then item table */
 document.addEventListener("DOMContentLoaded", function () {
     const { projectId, itemId } = getCurrentIds();
     const isRandom = document.getElementById('randomData').value;
 
+    // Always load projects dynamically (no quote_range → server uses session)
+    loadProjects();
+
     if (isRandom === 'yes') {
-        const tbody = document.getElementById("itemsTableBody");
-        $(".project-row").removeClass("active selected-row-project");
+        // No specific project selected — show placeholder in item table
         $(".project-radio").prop('checked', false);
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="100%" style="text-align:center; padding:12px; color:#666;">
-                    Select Project to display items
-                </td>
-            </tr>`;
+        resetItemTable();
         return;
     }
 
@@ -787,17 +881,17 @@ $(document).ready(function () {
         });
     }
 // on change PROJECT TYPE reload   test case / live projects
-    $('.project-type').on('change', function(){
-        const proj_type = $('.project-type').val();
-        $.ajax({
-            type: 'GET',
-            url: '/submit-project-type',
-            data: { proj_type },
-            success: function(){
-                location.reload();
-            }
-        });
-    });
+    // $('.project-type').on('change', function(){
+    //     const proj_type = $('.project-type').val();
+    //     $.ajax({
+    //         type: 'GET',
+    //         url: '/submit-project-type',
+    //         data: { proj_type },
+    //         success: function(){
+    //             location.reload();
+    //         }
+    //     });
+    // });
 
     /* Export project modal — load revisions dynamically */
     $(document).on('show.bs.modal', '#exportProjModal', function () {
