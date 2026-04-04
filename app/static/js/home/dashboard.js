@@ -84,8 +84,12 @@ function liveSearch(row_type) {
 
     debounceTimer = setTimeout(() => {
         if (row_type === 'project') {
-            // loadProjects() reads search input from DOM internally
-            loadProjects();
+            const projType = parseInt(document.getElementById('projectType').value || '1', 10);
+            if (projType === 2) {
+                loadTestcaseProjects();
+            } else {
+                loadProjects();
+            }
         } else if (row_type === 'item') {
             const requestId = ++currentRequestId;
             let url = window.location.pathname;
@@ -216,10 +220,6 @@ function updateProjectsList(projects, selectedProjId) {
     });
 }
 
-/**
- * Fetch projects from /load_projects and render them.
- * quoteRange — bucket string; if omitted, server uses the session value.
- */
 function resetItemTable() {
     document.getElementById("itemsTableBody").innerHTML = `
         <tr>
@@ -229,6 +229,49 @@ function resetItemTable() {
         </tr>`;
 }
 
+/**
+ * Fetch testcase projects from /load_testcase_projects and render them.
+ * Called when projType == 2 (FCC users only).
+ */
+function loadTestcaseProjects() {
+    const tbody     = document.getElementById("projectlist");
+    const requestId = ++projectLoadRequestId;
+
+    resetItemTable();
+
+    tbody.innerHTML = `
+        <tr><td colspan="100%" style="text-align:center;padding:14px;">
+            <div class="spinner" style="width:20px;height:20px;border-width:3px;margin:0 auto;"></div>
+        </td></tr>`;
+
+    const params = new URLSearchParams();
+    const searchValue = document.getElementById("search_input").value.trim();
+    if (searchValue) {
+        params.append('search_type',  projectsearchType);
+        params.append('search_value', searchValue);
+    }
+
+    const qs  = params.toString();
+    const url = '/load_testcase_projects' + (qs ? '?' + qs : '');
+
+    fetch(url)
+        .then(res => res.json())
+        .then(data => {
+            if (requestId !== projectLoadRequestId) return;
+            const { projectId } = getCurrentIds();
+            updateProjectsList(data.projects, projectId);
+        })
+        .catch(err => {
+            console.error("Testcase project load error:", err);
+            tbody.innerHTML = `<tr><td colspan="100%" style="text-align:center;padding:12px;color:#c00;">Error loading projects</td></tr>`;
+        });
+}
+
+/**
+ * Fetch live projects from /load_projects and render them.
+ * quoteRange — bucket string; if omitted, server uses the session value.
+ * Called when projType == 1.
+ */
 function loadProjects(quoteRange) {
     const tbody = document.getElementById("projectlist");
     const requestId = ++projectLoadRequestId;
@@ -836,8 +879,13 @@ document.addEventListener("DOMContentLoaded", function () {
     const { projectId, itemId } = getCurrentIds();
     const isRandom = document.getElementById('randomData').value;
 
-    // Always load projects dynamically (no quote_range → server uses session)
-    loadProjects();
+    // Load the correct project list based on projType
+    const projType = parseInt(document.getElementById('projectType').value || '1', 10);
+    if (projType === 2) {
+        loadTestcaseProjects();
+    } else {
+        loadProjects();
+    }
 
     if (isRandom === 'yes') {
         // No specific project selected — show placeholder in item table
@@ -880,18 +928,30 @@ $(document).ready(function () {
             behavior: "smooth"
         });
     }
-// on change PROJECT TYPE reload   test case / live projects
-    // $('.project-type').on('change', function(){
-    //     const proj_type = $('.project-type').val();
-    //     $.ajax({
-    //         type: 'GET',
-    //         url: '/submit-project-type',
-    //         data: { proj_type },
-    //         success: function(){
-    //             location.reload();
-    //         }
-    //     });
-    // });
+// on change PROJECT TYPE — save to DB, then dynamically refresh project & item tables
+    $('.project-type').on('change', function () {
+        const proj_type = $('.project-type').val();
+
+        $.ajax({
+            type: 'GET',
+            url: '/submit-project-type',
+            data: { proj_type },
+            success: function () {
+                const bucketSelect = document.getElementById('bucketSelect');
+                if (proj_type === '2') {
+                    if (bucketSelect) bucketSelect.style.display = 'none';
+                    loadTestcaseProjects();
+                } else {
+                    if (bucketSelect) bucketSelect.style.display = '';
+                    resetItemTable();
+                    loadProjects();
+                }
+            },
+            error: function () {
+                console.error('Failed to update project type');
+            }
+        });
+    });
 
     /* Export project modal — load revisions dynamically */
     $(document).on('show.bs.modal', '#exportProjModal', function () {

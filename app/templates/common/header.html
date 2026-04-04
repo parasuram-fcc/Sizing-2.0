@@ -308,6 +308,12 @@
             <div class="top-bar">
                 <span class="top-bar-title">FCC Sizing</span>
                 <div class="top-bar-actions">
+                    {% if user and user.fccUser %}
+                    <select name="proj-type" class="project-type proj-type-select">
+                        <option value="1" {% if user.projType == 1 %}selected{% endif %}>Live</option>
+                        <option value="2" {% if user.projType == 2 %}selected{% endif %}>Testcases</option>
+                    </select>
+                    {% endif %}
                     <a id="dashboardTourBtn" class="top-bar-btn" href="#">
                         <i class="fa fa-circle-info"></i> Quick Guide
                     </a>

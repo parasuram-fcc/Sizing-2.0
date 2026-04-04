@@ -437,6 +437,71 @@ def load_projects():
 
 
 # ---------------------------------------------------------------------------
+# /load_testcase_projects — AJAX endpoint for testcase project table (FCC only)
+# ---------------------------------------------------------------------------
+
+@bp.route('/load_testcase_projects', methods=['GET'])
+@login_required
+def load_testcase_projects():
+    """
+    Return a JSON list of testcase projects for the dashboard project table.
+    Only accessible by FCC users (projType == 2).
+
+    Mirrors the projType==2 branch in /home exactly.
+    Query params:
+        search_type  — 'quote' | 'customer' | 'region' | 'engineer'
+        search_value — raw search string
+    """
+    user = current_user
+
+    if not user.fccUser:
+        return jsonify({"projects": []})
+
+    user_ids_subq = get_fcc_user_ids()
+
+    query_ = (
+        db.session.query(projectMaster)
+        .options(
+            load_only(*_PROJECT_LOAD_ONLY),
+            selectinload(projectMaster.region).load_only(regionMaster.name),
+            selectinload(projectMaster.industry).load_only(industryMaster.name),
+            selectinload(projectMaster.user).load_only(
+                userMaster.email, userMaster.fccUser
+            ),
+        )
+        .filter(
+            projectMaster.createdById.in_(user_ids_subq),
+            or_(
+                projectMaster.quoteNo.like('Q24TC%'),
+                projectMaster.quoteNo.like('Q25TC%'),
+                projectMaster.quoteNo.like('Q26TC%'),
+                projectMaster.quoteNo.like('T%'),
+            ),
+        )
+    )
+
+    # Apply optional search
+    search_type  = request.args.get('search_type')
+    search_value = request.args.get('search_value')
+    if search_type and search_value:
+        query_ = apply_project_search(query_, search_type, search_value)
+
+    # Extra eager-load options needed by serialize_project
+    query_ = query_.options(
+        selectinload(projectMaster.project_address)
+            .selectinload(addressProject.address)
+            .selectinload(addressMaster.company)
+            .load_only(companyMaster.name),
+        selectinload(projectMaster.project_engineer)
+            .selectinload(engineerProject.engineer)
+            .load_only(engineerMaster.name),
+    )
+
+    projects = query_.order_by(projectMaster.id.desc()).all()
+    return jsonify({"projects": [serialize_project(p) for p in projects]})
+
+
+# ---------------------------------------------------------------------------
 # Private helpers (used only by delete/create routes below)
 # ---------------------------------------------------------------------------
 

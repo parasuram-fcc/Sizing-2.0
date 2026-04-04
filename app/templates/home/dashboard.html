@@ -102,17 +102,6 @@
                         </a>
                         {% endif %}
 
-                        {# Project type selector (FCC only) #}
-                        {% if user.fccUser %}
-                        {# TODO: implement 'submitProjType' route (POST /project/type/proj-<proj_id>/item-<item_id>) — saves selected project type (Live/Testcases) #}
-                        <div id="projForm">
-                            <select name="proj-type" class="project-type">
-                                <option value="1" {% if user.projType == 1 %}selected{% endif %}>Live</option>
-                                <option value="2" {% if user.projType == 2 %}selected{% endif %}>Testcases</option>
-                            </select>
-                        </div>
-                        {% endif %}
-
                         {# Project bucket selector (FCC live projects only) #}
                         {% if user.fccUser and user.projType == 1 %}
                         <select id="bucketSelect" class="bucket_list"
