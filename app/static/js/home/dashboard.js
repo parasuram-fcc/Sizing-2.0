@@ -786,12 +786,17 @@ $(document).ready(function () {
             behavior: "smooth"
         });
     }
-
-    const proj_type = $('.project-type').val();
-    $.ajax({
-        type: 'GET',
-        url: '/submit-project-type',
-        data: { proj_type }
+// on change PROJECT TYPE reload   test case / live projects
+    $('.project-type').on('change', function(){
+        const proj_type = $('.project-type').val();
+        $.ajax({
+            type: 'GET',
+            url: '/submit-project-type',
+            data: { proj_type },
+            success: function(){
+                location.reload();
+            }
+        });
     });
 
     /* Export project modal — load revisions dynamically */

@@ -933,3 +933,12 @@ def project_delete():
         )
 
     return {'proj': last_proj.id, 'item': last_item.id}
+
+@bp.route('/submit-project-type', methods=['GET'])
+def submitProjectType():
+    proj_type = request.args.get('proj_type')
+    user = current_user
+    if user.fccUser:
+        user.projType = int(proj_type)
+        db.session.commit() 
+    return jsonify({"status":"success"})

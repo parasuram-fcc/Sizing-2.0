@@ -15,14 +15,14 @@
 <input type="hidden" id="projectType"     value="{{ user.projType }}">
 
 {# -------- Main Dashboard Card -------- #}
-<div class="projectdetails project shadow hundred-percentage" style="margin-top:58px">
+<div class="projectdetails project shadow hundred-percentage" style="margin-top:62px">
 
     {# === PROJECT HEADER ROW === #}
-    <div class="row">
+    <div class="row helpdeskbar">
         <div class="col-6 mt-2">
             <div class="row ml-1">
                 <div class="col-2 mt-1">
-                    <h6>Project</h6>
+                    <h6>PROJECT</h6>
                 </div>
 
                 {% if user.fccUser %}
@@ -107,7 +107,7 @@
                         {# TODO: implement 'submitProjType' route (POST /project/type/proj-<proj_id>/item-<item_id>) — saves selected project type (Live/Testcases) #}
                         <form id="projForm" action="#" method="POST">
                             <select name="proj-type" class="project-type form-control"
-                                    onchange="allowNavigation=true; this.form.submit()">
+                                    onchange="allowNavigation=true;">
                                 <option value="1" {% if user.projType == 1 %}selected{% endif %}>Live</option>
                                 <option value="2" {% if user.projType == 2 %}selected{% endif %}>Testcases</option>
                             </select>
@@ -116,9 +116,9 @@
 
                         {# Project bucket selector (FCC live projects only) #}
                         {% if user.fccUser and user.projType == 1 %}
-                        <form id="projForm" action="{{ url_for('home.home', proj_id=item.project.id, item_id=item.id) }}">
+                        <form id="projForm" action="{{ url_for('home.home', proj_id=item.project.id, item_id=item.id) }}"> {# switch for dynamic upload#}
                             <input type="hidden" name="reload_source" value="project_dropdown">
-                            <select name="set-projects" class="project-type form-control bucket_list"
+                            <select name="set-projects" class="form-control bucket_list"
                                     onchange="allowNavigation=true; this.form.submit()">
                                 {% for projno in all_buckets %}
                                 <option value="{{ projno }}" {% if selected_bucket == projno %}selected{% endif %}>
@@ -148,7 +148,7 @@
                     <i class="fa fa-search search-icon" onclick="toggleSearchType()"></i>
                     <span id="search_type_label" class="search_type_label" onclick="toggleSearchType()">Customer Name</span>
                     <input type="text" class="mt-2 search_input" id="search_input"
-                           placeholder="Search..." onkeyup="liveSearch('project')">
+                           placeholder="Search..." onkeyup="liveSearch('project')"> {# add live search #}
                 </div>
                 <div class="search-dropdown" id="search_dropdown">
                     <div onclick="selectType('quote',    'Quote No')">Quote No</div>
@@ -188,11 +188,11 @@
     {# === ITEM SECTION === #}
     <div class="Itemdetails">
         <div class="item shadow mt-3">
-            <div class="row">
+            <div class="row helpdeskbar">
                 <div class="col-6 mt-2">
                     <div class="row ml-1">
                         <div class="col-2 mt-1">
-                            <h6>Item</h6>
+                            <h6>ITEM</h6>
                         </div>
                         <div class="col-3">
                             <div class="icons-container">
@@ -272,13 +272,13 @@
                             <th class="table2_print">Print</th>
                         </tr>
                     </thead>
-                    <tbody id="itemsTableBody"></tbody>
-                </table>
-
+                    <tbody id="itemsTableBody">
                 {# Spinner shown while items load #}
-                <div id="itemsLoader" class="items-loader">
-                    <div class="spinner"></div>
-                </div>
+                        <div id="itemsLoader" class="items-loader">
+                            <div class="spinner"></div>
+                        </div>
+                    </tbody>
+                </table>
             </div>
 
             {# === REVISION HISTORY MODAL === #}

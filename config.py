@@ -22,9 +22,8 @@ class Config:
     EXPORT_FOLDER = os.path.join(os.path.dirname(__file__), "exports")
     DATA_FOLDER = os.path.join(os.path.dirname(__file__), "data")
 
-    GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", env_data['GOOGLE_CLIENT_ID'])
-    GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", env_data['GOOGLE_CLIENT_SECRET'])
-
+    GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 
 class DevelopmentConfig(Config):
     DEBUG = True
