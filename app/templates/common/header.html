@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FCC</title>
+
+    {# -------- Jinja2 values for header.js -------- #}
+    <input type="hidden" id="hdrUserId"   value="{{ user.id   if user and user.id else '' }}">
+    <input type="hidden" id="hdrUserName" value="{{ user.name if user and user.name else '' }}">
+
+    {# -------- CDN Libraries -------- #}
+    {# jQuery: one full build (slim build lacks $.ajax).
+       TODO (v2): consolidate to a single jQuery version; v1 loaded both slim 3.7.1 and full 1.12.4. #}
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+          integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw=="
+          crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link href="https://fonts.googleapis.com/css?family=Poppins" rel="stylesheet">
+
+    {# intro.js — used by per-page guided tours #}
+    <link  rel="stylesheet" href="https://unpkg.com/intro.js/minified/introjs.min.css">
+    <script src="https://unpkg.com/intro.js/minified/intro.min.js"></script>
+
+    {# Amplitude analytics #}
+    <script src="https://cdn.amplitude.com/script/7abd972126f84a8268f7bc9d8c4b2674.js"></script>
+
+    {# -------- Local Static Files -------- #}
+    {# TODO (v2): port v1 table.css → app/static/css/common/table.css and update path below #}
+    {# <link rel="stylesheet" href="{{ url_for('static', filename='css/common/table.css') }}"> #}
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/common/sidebar.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/common/header.css') }}">
+
+    {# TODO (v2): port v1 static/js/resizetable.js → app/static/js/common/resizetable.js #}
+    {# <script src="{{ url_for('static', filename='js/common/resizetable.js') }}"></script> #}
+
+    <script src="{{ url_for('static', filename='js/common/header.js') }}" defer></script>
+
+    {# Favicon #}
+    <link rel="icon" type="image/x-icon"
+          href="https://fccommune.com/assets/img/Icon-flow%20control%20commune.png">
+</head>
+
+<body>
+<div class="container-fluid">
+    <div class="row">
+
+        {# ====== SIDEBAR ====== #}
+        <div class="col-2" style="min-width:250px; flex:0 0 250px;">
+            <div class="sidenav">
+                <ul class="nav flex-column flex-nowrap">
+
+                    {# --- Dashboard (AVAILABLE) --- #}
+                    <li class="nav-item">
+                        {% if user and user.id %}
+                        <a data-page="home" id="dashboard"
+                           class="nav-link nav-dynamic {% if request.path | url_path == 'home' %}active-sidebar{% endif %}"
+                           href="#">
+                            <span class="d-none d-lg-inline">Dashboard</span>
+                            <span class="d-lg-none">D</span>
+                        </a>
+                        {% else %}
+                        <a class="nav-link text-muted nav-link-disabled"
+                           title="Login to access Dashboard">
+                            <span class="d-none d-lg-inline">Dashboard 🔒</span>
+                            <span class="d-lg-none">D</span>
+                        </a>
+                        {% endif %}
+                    </li>
+
+                    {# --- Project Details (TODO: endpoint not yet in v2) --- #}
+                    <li class="nav-item">
+                        <p>
+                            {# TODO (v2): wire up url when edit-project blueprint is ready #}
+                            <a id="projectDetails"
+                               class="nav-link nav-link-disabled"
+                               title="Project Details — not yet available in v2">
+                                <span class="d-none d-lg-inline">Project Details</span>
+                                <span class="d-lg-none">PD</span>
+                            </a>
+                        </p>
+                    </li>
+
+                    {# --- Valve Data (TODO: endpoint not yet in v2) --- #}
+                    <li class="nav-item">
+                        <p>
+                            {# TODO (v2): data-page="valve-data" when blueprint is ready #}
+                            <a id="valveData"
+                               class="nav-link nav-link-disabled"
+                               title="Valve Data — not yet available in v2">
+                                <span class="d-none d-lg-inline">Valve Data</span>
+                                <span class="d-lg-none">VD</span>
+                            </a>
+                        </p>
+                    </li>
+
+                    {# --- Valve Sizing (TODO: endpoint not yet in v2) --- #}
+                    <li class="nav-item">
+                        <p>
+                            {# TODO (v2): data-page="valve-sizing" when blueprint is ready #}
+                            <a id="valveSizing"
+                               class="nav-link nav-link-disabled"
+                               title="Valve Sizing — not yet available in v2">
+                                <span class="d-none d-lg-inline">Valve Sizing</span>
+                                <span class="d-lg-none">VS</span>
+                            </a>
+                        </p>
+                    </li>
+
+                    {# --- Actuator Sizing (TODO: endpoint not yet in v2) --- #}
+                    <li class="nav-item">
+                        <p>
+                            {# TODO (v2): data-page="actuator-sizing" when blueprint is ready #}
+                            <a id="actSizing"
+                               class="nav-link nav-link-disabled"
+                               title="Actuator Sizing — not yet available in v2">
+                                <span class="d-none d-lg-inline">Actuator Sizing</span>
+                                <span class="d-lg-none">AS</span>
+                            </a>
+                        </p>
+                    </li>
+
+                    {# --- Volume Tank (TODO: endpoint not yet in v2) --- #}
+                    <li class="nav-item">
+                        <p>
+                            {# TODO (v2): data-page="volume-tank" when blueprint is ready #}
+                            <a id="volumeTank"
+                               class="nav-link nav-link-disabled"
+                               title="Volume Tank — not yet available in v2">
+                                <span class="d-none d-lg-inline">Volume Tank</span>
+                                <span class="d-lg-none">VT</span>
+                            </a>
+                        </p>
+                    </li>
+
+                    {# --- Accessories (TODO: endpoint not yet in v2) --- #}
+                    <li class="nav-item">
+                        <p>
+                            {# TODO (v2): data-page="accessories" when blueprint is ready #}
+                            <a id="accessories"
+                               class="nav-link nav-link-disabled"
+                               title="Accessories — not yet available in v2">
+                                <span class="d-none d-lg-inline">Accessories</span>
+                                <span class="d-lg-none">AC</span>
+                            </a>
+                        </p>
+                    </li>
+
+                    {# --- GAD (TODO: endpoint not yet in v2) --- #}
+                    <li class="nav-item">
+                        <p>
+                            {# TODO (v2): data-page="gad" when blueprint is ready #}
+                            <a id="gad"
+                               class="nav-link nav-link-disabled"
+                               title="GAD — not yet available in v2">
+                                GAD
+                            </a>
+                        </p>
+                    </li>
+
+                    {# --- Pricing (TODO: endpoint not yet in v2, superusers only) --- #}
+                    {% if user.email in ['gokulakrishnan@fccommune.com', 'devayani@fccommune.com',
+                                         'soundarya@fccommune.com', 'ashwin@fccommune.com'] %}
+                    <li class="nav-item">
+                        <p>
+                            {# TODO (v2): href="{{ url_for('pricing.pricing_automation', proj_id=..., item_id=...) }}" #}
+                            <a class="nav-link nav-link-disabled"
+                               title="Price — not yet available in v2">
+                                <span class="d-none d-lg-inline">Price</span>
+                                <span class="d-lg-none">PR</span>
+                            </a>
+                        </p>
+                    </li>
+                    {% endif %}
+
+                    {# --- Orders / Item Notes (TODO: endpoint not yet in v2) --- #}
+                    <li class="nav-item">
+                        <p>
+                            {# TODO (v2): data-page="order-notes" when blueprint is ready #}
+                            <a id="itemNotes"
+                               class="nav-link nav-link-disabled"
+                               title="Orders, Item Notes — not yet available in v2">
+                                <span class="d-none d-lg-inline">Orders, Item Notes</span>
+                                <span class="d-lg-none">IN</span>
+                            </a>
+                        </p>
+                    </li>
+
+                    {# --- Project Notes (TODO: endpoint not yet in v2) --- #}
+                    <li class="nav-item">
+                        <p>
+                            {# TODO (v2): data-page="project-notes" when blueprint is ready #}
+                            <a class="nav-link nav-link-disabled"
+                               title="Project Notes — not yet available in v2">
+                                <span class="d-none d-lg-inline">Project Notes</span>
+                                <span class="d-lg-none">PN</span>
+                            </a>
+                        </p>
+                    </li>
+
+                    {# --- Reference Tables (TODO: endpoint not yet in v2) --- #}
+                    <li class="nav-item">
+                        <p>
+                            {# TODO (v2): data-page="view-data" when blueprint is ready #}
+                            <a class="nav-link nav-link-disabled"
+                               title="Reference Tables — not yet available in v2">
+                                <span class="d-none d-lg-inline">Reference Tables</span>
+                                <span class="d-lg-none">RT</span>
+                            </a>
+                        </p>
+                    </li>
+
+                    {# --- Customer Master (TODO: endpoint not yet in v2) --- #}
+                    <li class="nav-item">
+                        <p>
+                            {# TODO (v2): data-page="company-master" when blueprint is ready #}
+                            <a class="nav-link nav-link-disabled"
+                               title="Customer Master — not yet available in v2">
+                                <span class="d-none d-lg-inline">Customer Master</span>
+                                <span class="d-lg-none">CM</span>
+                            </a>
+                        </p>
+                    </li>
+
+                    {# --- Gas Noise (TODO: endpoint not yet in v2) --- #}
+                    <li class="nav-item">
+                        <p>
+                            {# TODO (v2): href="{{ url_for('gas_noise.gasNoise') }}" when blueprint is ready #}
+                            <a class="nav-link nav-link-disabled"
+                               title="Gas Noise — not yet available in v2">
+                                <span class="d-none d-lg-inline">Gas Noise</span>
+                                <span class="d-lg-none">GN</span>
+                            </a>
+                        </p>
+                    </li>
+
+                    {# --- Trim Exit Velocity (TODO: endpoint not yet in v2) --- #}
+                    <li class="nav-item">
+                        <p>
+                            {# TODO (v2): href="{{ url_for('trim.trimExitVel') }}" when blueprint is ready #}
+                            <a class="nav-link nav-link-disabled"
+                               title="Trim Exit Velocity — not yet available in v2">
+                                <span class="d-none d-lg-inline">Trim Exit Velocity</span>
+                                <span class="d-lg-none">TEV</span>
+                            </a>
+                        </p>
+                    </li>
+
+                    {# --- Logout (AVAILABLE — auth blueprint) --- #}
+                    <li class="nav-item">
+                        <p>
+                            <a class="nav-link" href="{{ url_for('auth.logout') }}">
+                                <span class="d-none d-lg-inline">Logout</span>
+                                <span class="d-lg-none">LO</span>
+                            </a>
+                        </p>
+                    </li>
+
+                    {# --- User Profile (TODO: endpoint not yet in v2) --- #}
+                    <li class="nav-item mt-1">
+                        <p class="nav-link-user">
+                            {# TODO (v2): data-page="edit-profile" when blueprint is ready #}
+                            <a class="nav-link nav-link-disabled"
+                               style="color:white; text-decoration:none; padding-left:0; padding-right:0;"
+                               title="Edit Profile — not yet available in v2">
+                                <svg fill="none" height="18" viewBox="0 0 24 24" width="18"
+                                     xmlns="http://www.w3.org/2000/svg">
+                                    <g stroke="white" stroke-width="1.7">
+                                        <circle cx="12" cy="7" r="5"/>
+                                        <path d="m17 14h.3517c1.5129 0 2.7891 1.1266 2.9768 2.6279l.3905 3.124c.1492 1.1937-.7816 2.2481-1.9846 2.2481h-13.46884c-1.20299 0-2.13376-1.0544-1.98455-2.2481l.3905-3.124c.18766-1.5013 1.46387-2.6279 2.97684-2.6279h.35165"
+                                              stroke-linecap="round" stroke-linejoin="round"/>
+                                    </g>
+                                </svg>
+                                <span class="d-none d-lg-inline">{{ user.name }}</span>
+                                <span class="d-lg-none">{{ user.initial }}</span>
+                            </a>
+                        </p>
+                    </li>
+
+                </ul>
+            </div>
+        </div>
+        {# ====== END SIDEBAR ====== #}
+
+        {# ====== MAIN CONTENT COLUMN ====== #}
+        <div class="col-10 vh-100 page-scroll">
+
+            {# Flash messages — fixed top-right #}
+            <div class="flash-message-container">
+                {% with messages = get_flashed_messages(with_categories=True) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                        <ul class="flash-messages {% if category == 'success' %}flash-success{% elif category == 'failure' %}flash-failure{% endif %}">
+                            <li>{{ message }}</li>
+                        </ul>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+            </div>
+
+            {# ====== TOP BAR ====== #}
+            <div class="top-bar">
+                <span class="top-bar-title">FCC Sizing</span>
+                <div class="top-bar-actions">
+                    <a id="dashboardTourBtn" class="top-bar-btn" href="#">
+                        <i class="fa fa-circle-info"></i> Quick Guide
+                    </a>
+                    <a class="top-bar-btn" href="#">
+                        <i class="fa fa-circle-question"></i> Help
+                    </a>
+                    <div class="user-avatar" title="{{ user.name if user else '' }}">
+                        <i class="fa fa-user"></i>
+                    </div>
+                </div>
+            </div>
+
+            {# Page content starts here #}

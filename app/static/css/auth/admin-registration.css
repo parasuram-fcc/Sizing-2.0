@@ -1,0 +1,21 @@
+/* app/static/css/auth/admin-registration.css
+   Page-specific overrides for the registration form page.
+   All base styles are in auth-common.css.
+*/
+
+/* Left panel has less padding on top to fit more fields */
+.left-section {
+    padding: 35px 60px;
+}
+
+/* Submit button — full-width blue */
+button[type="submit"] {
+    padding: 10px;
+    background-color: #478cb5;
+    color: #fff;
+    border: 1px solid #478cb5;
+    border-radius: 6px;
+    font-size: 16px;
+    cursor: pointer;
+    width: 100%;
+}

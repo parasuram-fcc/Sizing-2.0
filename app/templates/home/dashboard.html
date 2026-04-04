@@ -1,0 +1,360 @@
+{% block content %}
+{% include "common/header.html" %}
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/home/dashboard.css') }}">
+
+{# -------- Jinja2 values for dashboard.js -------- #}
+<input type="hidden" id="adminUser"       value="{{ 'true' if user.admin else 'false' }}">
+<input type="hidden" id="currentUserCode" value="{{ current_user.code }}">
+<input type="hidden" id="isFccProject"    value="{{ 'true' if user.fccUser else 'false' }}">
+<input type="hidden" id="projRef"         value="{{ proj_ref }}">
+<input type="hidden" id="currentQuote"    value="{{ f_projId.quoteNo if f_projId else '' }}">
+<input type="hidden" id="username"        value="{{ user.name }}">
+<input type="hidden" id="randomData"      value="{{ random_data }}">
+<input type="hidden" id="selectedBucket"  value="{{ selected_bucket }}">
+<input type="hidden" id="projectType"     value="{{ user.projType }}">
+
+{# -------- Main Dashboard Card -------- #}
+<div class="projectdetails project shadow hundred-percentage" style="margin-top:58px">
+
+    {# === PROJECT HEADER ROW === #}
+    <div class="row">
+        <div class="col-6 mt-2">
+            <div class="row ml-1">
+                <div class="col-2 mt-1">
+                    <h6>Project</h6>
+                </div>
+
+                {% if user.fccUser %}
+                <div class="col-10">
+                {% else %}
+                <div class="col-4">
+                {% endif %}
+                    <div class="icons-container">
+
+                        {# Create project #}
+                        {# TODO: implement 'addProject' route (GET/POST /project/add/proj-<proj_id>/item-<item_id>) — creates a new project #}
+                        <a id="projectAddBtn"
+                           href="#"
+                           data-toggle="tooltip" title="Create" data-placement="bottom">
+                            <svg id="i-plus" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"
+                                 width="15" height="14" fill="none" stroke="black"
+                                 stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+                                <path d="M16 2 L16 30 M2 16 L30 16" />
+                            </svg>
+                        </a>
+
+                        {# Delete project (superusers only) #}
+                        {% if user.email in ['gokulakrishnan@fccommune.com', 'devayani@fccommune.com', 'parasuram@fccommune.com'] %}
+                        <a style="cursor:pointer" data-toggle="tooltip" title="Delete" data-placement="bottom"
+                           onclick="projectDelete('{{ item.project.id }}')">
+                            <svg id="i-close" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"
+                                 width="11" height="11" fill="none" stroke="black"
+                                 stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+                                <path d="M2 30 L30 2 M30 30 L2 2" />
+                            </svg>
+                        </a>
+                        {% endif %}
+
+                        {# Export project #}
+                        <a id="exportProjIcon"
+                           data-toggle="modal" data-target="#exportProjModal"
+                           title="Download" data-placement="bottom">
+                            <svg height="22" viewBox="0 0 24 24" width="20" xmlns="http://www.w3.org/2000/svg">
+                                <path d="m20 6.52797748v12.97202252c0 1.3807119-1.1192881 2.5-2.5 2.5h-11c-1.38071187 0-2.5-1.1192881-2.5-2.5v-15c0-1.38071187 1.11928813-2.5 2.5-2.5h8.9720225c.1327463-.00841947.2709238.03583949.3815309.14644661l4 4c.1106071.11060712.1548661.24878464.1464466.38153087zm-5-3.52797748h-8.5c-.82842712 0-1.5.67157288-1.5 1.5v15c0 .8284271.67157288 1.5 1.5 1.5h11c.8284271 0 1.5-.6715729 1.5-1.5v-12.5h-3.5c-.2761424 0-.5-.22385763-.5-.5zm1 .70710678v2.29289322h2.2928932zm-4 12.58578642 2.1464466-2.1464466c.1952622-.1952621.5118446-.1952621.7071068 0 .1952621.1952622.1952621.5118446 0 .7071068l-2.9337265 2.9337265c-.0891066.1374188-.24385.2283299-.4198269.2283299s-.3307203-.0909111-.4198269-.2283299l-2.93372649-2.9337265c-.19526215-.1952622-.19526215-.5118446 0-.7071068.19526215-.1952621.51184463-.1952621.70710678 0l2.14644661 2.1464466v-6.7928932c0-.27614237.2238576-.5.5-.5s.5.22385763.5.5z"/>
+                            </svg>
+                        </a>
+
+                        {# Import project #}
+                        {# TODO: implement 'importProject' route (GET/POST /project/import/proj-<proj_id>/item-<item_id>) — handles project file upload/import #}
+                        <a id="importProjIcon"
+                           href="#"
+                           data-toggle="tooltip" title="Upload" data-placement="bottom">
+                            <svg height="22" viewBox="0 0 24 24" width="20" xmlns="http://www.w3.org/2000/svg">
+                                <path d="m20 6.52897986v12.97202254c0 1.3807119-1.1192881 2.5-2.5 2.5h-11c-1.38071187 0-2.5-1.1192881-2.5-2.5v-15.00000002c0-1.38071188 1.11928813-2.5 2.5-2.5h8.9720225c.1327463-.00841947.2709238.03583949.3815309.14644661l4 4c.1106071.11060712.1548661.24878464.1464466.38153087zm-5-3.52797748h-8.5c-.82842712 0-1.5.67157287-1.5 1.5v15.00000002c0 .8284271.67157288 1.5 1.5 1.5h11c.8284271 0 1.5-.6715729 1.5-1.5v-12.50000002h-3.5c-.2761424 0-.5-.22385763-.5-.5zm1 .70710678v2.29289322h2.2928932zm-4 6.99899764v6.7928932c0 .2761424-.2238576.5-.5.5s-.5-.2238576-.5-.5v-6.7928932l-2.14644661 2.1464466c-.19526215.1952621-.51184463.1952621-.70710678 0-.19526215-.1952622-.19526215-.5118446 0-.7071068l2.99999999-2.99999999c.1952622-.19526215.5118446-.19526215.7071068 0l3 2.99999999c.1952621.1952622.1952621.5118446 0 .7071068-.1952622.1952621-.5118446.1952621-.7071068 0z"/>
+                            </svg>
+                        </a>
+
+                        {# Submit project (FCC only) #}
+                        {% if user.fccUser %}
+                        <a href="#" onclick="submitProject(event, '{{ item.project.id }}')" title="Submit">
+                            <svg viewBox="0 0 24 24" width="17" height="16" xmlns="http://www.w3.org/2000/svg">
+                                <path fill="none" stroke="black" stroke-width="2" d="M2 12L10 20L22 4"/>
+                            </svg>
+                        </a>
+                        {% endif %}
+
+                        {# Convert project (superusers only) #}
+                        {% if user.email in ['gokulakrishnan@fccommune.com', 'devayani@fccommune.com'] %}
+                        {# TODO: implement 'convertProject' route (GET /project/convert/proj-<proj_id>/item-<item_id>) — converts project type (superuser only) #}
+                        <a href="#"
+                           style="text-decoration:none;">
+                            <svg height="22" width="20" viewBox="0 0 28 28" title="Convert"
+                                 xmlns="http://www.w3.org/2000/svg" style="cursor:pointer;">
+                                <path d="M6.5 2H15.5L20 6.5V19.5C20 20.88 18.88 22 17.5 22H6.5C5.12 22 4 20.88 4 19.5V4.5C4 3.12 5.12 2 6.5 2Z"
+                                      fill="none" stroke="black" stroke-width="1"/>
+                                <path d="M15.5 2V6.5H20" fill="none" stroke="black" stroke-width="1"/>
+                                <path d="M8 10H15L13 8M15 10L13 12" fill="none" stroke="black"
+                                      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M16 14H9L11 16M9 14L11 14" fill="none" stroke="black"
+                                      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </a>
+                        {% endif %}
+
+                        {# Project type selector (FCC only) #}
+                        {% if user.fccUser %}
+                        {# TODO: implement 'submitProjType' route (POST /project/type/proj-<proj_id>/item-<item_id>) — saves selected project type (Live/Testcases) #}
+                        <form id="projForm" action="#" method="POST">
+                            <select name="proj-type" class="project-type form-control"
+                                    onchange="allowNavigation=true; this.form.submit()">
+                                <option value="1" {% if user.projType == 1 %}selected{% endif %}>Live</option>
+                                <option value="2" {% if user.projType == 2 %}selected{% endif %}>Testcases</option>
+                            </select>
+                        </form>
+                        {% endif %}
+
+                        {# Project bucket selector (FCC live projects only) #}
+                        {% if user.fccUser and user.projType == 1 %}
+                        <form id="projForm" action="{{ url_for('home.home', proj_id=item.project.id, item_id=item.id) }}">
+                            <input type="hidden" name="reload_source" value="project_dropdown">
+                            <select name="set-projects" class="project-type form-control bucket_list"
+                                    onchange="allowNavigation=true; this.form.submit()">
+                                {% for projno in all_buckets %}
+                                <option value="{{ projno }}" {% if selected_bucket == projno %}selected{% endif %}>
+                                    {{ projno }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </form>
+                        {% endif %}
+
+                        {# Run all items (Testcases only) #}
+                        {% if user.projType == 2 %}
+                        <a data-action="valvesizingallitems" href="#" class="nav-link nav-dynamic" style="color:black;">
+                            Run
+                        </a>
+                        {% endif %}
+
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {# Project search box #}
+        <div class="col-6 d-flex justify-content-end mt-2">
+            <div class="smart-search">
+                <div class="search-box">
+                    <i class="fa fa-search search-icon" onclick="toggleSearchType()"></i>
+                    <span id="search_type_label" class="search_type_label" onclick="toggleSearchType()">Customer Name</span>
+                    <input type="text" class="mt-2 search_input" id="search_input"
+                           placeholder="Search..." onkeyup="liveSearch('project')">
+                </div>
+                <div class="search-dropdown" id="search_dropdown">
+                    <div onclick="selectType('quote',    'Quote No')">Quote No</div>
+                    <div onclick="selectType('customer', 'Customer Name')">Customer Name</div>
+                    <div onclick="selectType('region',   'Region')">Region</div>
+                    <div onclick="selectType('engineer', 'Engineer')">Engineer</div>
+                </div>
+            </div>
+        </div>
+    </div>{# end .row #}
+
+    {# === PROJECT TABLE === #}
+    <div class="border_outline" id="tablescroll">
+        <table class="table table-bordered table-sm table-hover dash-table mb-0">
+            <thead class="dash_thead">
+                <tr>
+                    <th class="table1_quote">Quote No</th>
+                    <th class="table1_customer">Customer Name</th>
+                    <th class="table1_enquiry">Enquiry Ref</th>
+                    <th class="table1_receipt">Receipt Date</th>
+                    <th class="table1_due">Due Date</th>
+                    <th class="table1_region">Region</th>
+                    <th class="table1_industry">Industry</th>
+                    <th class="table1_engineer">Engineer</th>
+                    <th class="table1_status">Status</th>
+                    <th class="table1_work">Work Order No</th>
+                    <th class="table1_work">Revision</th>
+                    <th class="table1_print">Print</th>
+                </tr>
+            </thead>
+            <tbody id="projectlist">
+                {% include 'home/project_rows.html' %}
+            </tbody>
+        </table>
+    </div>
+
+    {# === ITEM SECTION === #}
+    <div class="Itemdetails">
+        <div class="item shadow mt-3">
+            <div class="row">
+                <div class="col-6 mt-2">
+                    <div class="row ml-1">
+                        <div class="col-2 mt-1">
+                            <h6>Item</h6>
+                        </div>
+                        <div class="col-3">
+                            <div class="icons-container">
+                                {# Create item #}
+                                <a id="itemAddIcon" href="#"
+                                   data-toggle="tooltip" title="Create" data-placement="bottom">
+                                    <svg id="i-plus" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"
+                                         width="15" height="14" fill="none" stroke="black"
+                                         stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+                                        <path d="M16 2 L16 30 M2 16 L30 16" />
+                                    </svg>
+                                </a>
+
+                                {# Delete item #}
+                                <a style="cursor:pointer" data-toggle="tooltip" title="Delete"
+                                   data-placement="bottom" onclick="itemDelete('{{ item.id }}')">
+                                    <svg id="i-close" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"
+                                         width="11" height="11" fill="none" stroke="black"
+                                         stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+                                        <path d="M2 30 L30 2 M30 30 L2 2" />
+                                    </svg>
+                                </a>
+
+                                {# Copy item #}
+                                <a id="copyItemIcon" data-toggle="modal" data-target="#copyItemModal"
+                                   title="Copy" data-placement="bottom">
+                                    <svg viewBox="0 0 32 32" width="17" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="m28 10v18h-18v-18zm0-2h-18a2 2 0 0 0 -2 2v18a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2v-18a2 2 0 0 0 -2-2z"/>
+                                        <path d="m4 18h-2v-14a2 2 0 0 1 2-2h14v2h-14z"/>
+                                        <path d="m0 0h32v32h-32z" fill="none"/>
+                                    </svg>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {# Item search box #}
+                <div class="col-6 mt-1 d-flex justify-content-end align-items-center">
+                    <div class="smart-search">
+                        <div class="search-box">
+                            <i class="fa fa-search search-icon" onclick="toggleSearchTypeItem()"></i>
+                            <span id="search_type_label_item" class="search_type_label"
+                                  onclick="toggleSearchTypeItem()">Tag No</span>
+                            <input type="text" class="mt-2 search_input" id="search_input_item"
+                                   placeholder="Search..." onkeyup="liveSearch('item')">
+                        </div>
+                        <div class="search-dropdown" id="search_dropdown_item">
+                            <div onclick="selectTypeItem('tagNo', 'Tag No')">Tag No</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {# === ITEM TABLE === #}
+            <div class="border_outline" id="tablecontainer2">
+                <table class="table table-bordered table-sm table-hover dash-table mb-0">
+                    <thead class="dash_thead">
+                        <tr>
+                            <th class="table2_item">Item</th>
+                            <th class="table2_alt">Alt</th>
+                            <th class="table2_tag">Tag Number</th>
+                            <th class="table2_size">Series</th>
+                            <th class="table2_size">Size</th>
+                            <th class="table2_model">Model</th>
+                            <th class="table2_type">Type</th>
+                            <th class="table2_rating">Rating</th>
+                            <th class="table2_material">Material</th>
+                            <th class="table2_unit">Unit Price</th>
+                            <th class="table2_qty">Qty</th>
+                            <th class="table2_total">Total Price</th>
+                            {% if user.fccUser %}
+                            <th class="table2_total">Status</th>
+                            <th class="table2_total">Revision</th>
+                            <th class="table2_total">Rev View</th>
+                            {% endif %}
+                            <th class="table2_print">Print</th>
+                        </tr>
+                    </thead>
+                    <tbody id="itemsTableBody"></tbody>
+                </table>
+
+                {# Spinner shown while items load #}
+                <div id="itemsLoader" class="items-loader">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+
+            {# === REVISION HISTORY MODAL === #}
+            <div class="modal fade rev-modal" id="revisionModal" tabindex="-1" role="dialog" aria-hidden="true">
+                <div class="modal-dialog" role="document">
+                    <div class="modal-content modalpopup">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Item Revision History</h5>
+                            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
+                        <div class="modal-body rev-body"></div>
+                        <div class="modal-footer rev-footer"></div>
+                    </div>
+                </div>
+            </div>
+
+            {# === EXPORT PROJECT MODAL === #}
+            <div class="modal fade" id="exportProjModal" tabindex="-1" role="dialog" aria-hidden="true">
+                <div class="modal-dialog" role="document">
+                    <div class="modal-content modalpopup">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Export Project</h5>
+                            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
+                        <div class="modal-body" id="exportProjModalBody">
+                            <p class="text-muted text-center">Select project revision to export</p>
+                        </div>
+                        <div class="modal-footer">
+                            {# TODO: implement 'exportProject' route (POST /project/export/proj-<proj_id>/item-<item_id>) — exports selected project revision #}
+                            <form id="exportProjForm"
+                                  action="#"
+                                  onclick="exportProj()">
+                                <input type="hidden" class="export_rev_proj" name="export_proj" />
+                                <button type="submit">Export</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {# === COPY ITEM MODAL === #}
+            <div class="modal fade" id="copyItemModal" tabindex="-1" role="dialog" aria-hidden="true">
+                <div class="modal-dialog" role="document">
+                    <div class="modal-content modalpopup">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Copy Item</h5>
+                            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
+                        <div class="modal-body" id="copyItemModalBody">
+                            <p class="text-muted text-center">Select a revision to copy</p>
+                        </div>
+                        <div class="modal-footer">
+                            {# TODO: implement 'copyItem' route (POST /item/copy/proj-<proj_id>/item-<item_id>) — copies selected item revision #}
+                            <form id="copyItemForm"
+                                  action="#"
+                                  onsubmit="copyItem()">
+                                <input type="hidden" name="copy_rev_item" class="copy_rev_item" />
+                                <button type="submit">Copy</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>{# end .item.shadow #}
+    </div>{# end .Itemdetails #}
+
+</div>{# end .projectdetails.project.shadow #}
+
+<script src="{{ url_for('static', filename='js/home/dashboard.js') }}"></script>
+
+{% include "common/footer.html" %}
+{% endblock %}

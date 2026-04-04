@@ -1,0 +1,56 @@
+{% for project in projects %}
+<tr class="project-row {% if item and item.project.id == project.id %}selected-row-project{% endif %}"
+    data-projid="{{ project.id }}"
+    style="cursor:pointer">
+
+    <td class="table1_quote">
+        {{ 'TBA' if project.quoteNo is none else project.quoteNo }}
+    </td>
+
+    <td class="table1_customer pdl-4">
+        {{ project.customer_name if project.customer_name else 'N/A' }}
+    </td>
+
+    <td class="table1_enquiry pdl-4">{{ project.enquiryRef }}</td>
+
+    {% if project.project_engineer %}
+    <td class="table1_receipt pdl-4">{{ project.receiptDate.date() }}</td>
+    <td class="table1_due pdl-4">{{ project.bidDueDate.date() }}</td>
+    <td class="table1_region pdl-4">{{ project.region.name }}</td>
+    <td class="table1_industry pdl-4">{{ project.industry.name }}</td>
+    {% else %}
+    <td class="table1_receipt pdl-4">N/A</td>
+    <td class="table1_due pdl-4">N/A</td>
+    <td class="table1_region pdl-4">N/A</td>
+    <td class="table1_industry pdl-4">N/A</td>
+    {% endif %}
+
+    <td class="table1_engineer pdl-4">
+        {{ project.engineer_name if project.engineer_name else 'N/A' }}
+    </td>
+
+    <td class="table1_status pdl-4">{{ project.status }}</td>
+    <td class="table1_work pdl-4">{{ project.workOderNo }}</td>
+
+    {# Revision view — handled by header.js nav-dynamic (data-page) #}
+    <td class="table1_work">
+        <a class="nav-dynamic" data-page="projectRevisionView" href="#">
+            <i class="fa-solid fa-eye"></i>
+        </a>
+    </td>
+
+    {# Print — handled by header.js nav-dynamic (data-page).
+       TESTCASES projects navigate to valve_sizing_all_items instead of spec sheet. #}
+    <td class="table1_print" id="projectPrint">
+        {% if item.project.projectRef == 'TESTCASES' %}
+        <a class="nav-dynamic" data-page="valve_sizing_all_items" href="#">
+            <i class="fa-solid fa-print"></i>
+        </a>
+        {% else %}
+        <a class="nav-dynamic" data-page="generate_csv_project" href="#">
+            <i class="fa-solid fa-print"></i>
+        </a>
+        {% endif %}
+    </td>
+</tr>
+{% endfor %}

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reset Password</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/auth/auth-common.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/auth/reset-pw.css') }}">
+</head>
+<body>
+<div class="main-wrapper">
+    <div class="login-container" style="zoom:0.8">
+
+        <!-- LEFT SECTION -->
+        <div class="left-section">
+            <div class="brand">
+                <h2 style="font-weight: bold; font-size:1.5em">Reset Password</h2>
+                <br>
+            </div>
+
+            <!-- Route reads OTP/password from request.form, not form object; hidden_tag() provides CSRF -->
+            <form class="login-form" action="{{ url_for('auth.sendOTPEmail') }}" method="POST">
+                {{ form.hidden_tag() }}
+
+                <input type="text" name="otp" placeholder="OTP" required>
+                <input type="password" name="password" placeholder="New Password" required>
+
+                <button class="login-btn" type="submit">Reset Password</button>
+
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <p class="error-text">{{ message }}</p>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+            </form>
+        </div>
+
+        <!-- RIGHT SECTION -->
+        <div class="right-section">
+            <h2>Revolutionize Valve Sizing<br>with Smarter Automation</h2>
+            <p class="quote">
+                "Our sizing software ensures accuracy, speed, and reliability for all engineering teams.
+                The results are consistent, validated, and compliant with IEC standards."
+            </p>
+        </div>
+
+    </div>
+</div>
+</body>
+</html>

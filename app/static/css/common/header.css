@@ -1,0 +1,151 @@
+/* =============================================
+   header.css — Flash messages + layout helpers
+   ============================================= */
+
+/* ---------- Flash Message Container ---------- */
+.flash-message-container {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 9999;
+    max-width: 320px;
+}
+
+/* ---------- Flash Messages ---------- */
+.flash-messages {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: 'Poppins', sans-serif;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    pointer-events: none;
+}
+
+.flash-messages.show {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.flash-messages li {
+    padding: 0;
+    margin: 0;
+}
+
+.flash-success {
+    background: #d1fae5;
+    border-left: 4px solid #10b981;
+    color: #065f46;
+}
+
+.flash-failure {
+    background: #fee2e2;
+    border-left: 4px solid #ef4444;
+    color: #991b1b;
+}
+
+/* ---------- Top Bar ---------- */
+.top-bar {
+    position: fixed;
+    top: 0;
+    left: 12.5rem;
+    right: 0;
+    height: 50px;
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1.25rem;
+    z-index: 500;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+@media (max-width: 900px) {
+    .top-bar { left: 100px; }
+}
+
+.top-bar-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1f2937;
+    letter-spacing: 0.01em;
+}
+
+.top-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+/* Outlined pill buttons — Quick Guide / Help */
+.top-bar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 9999px;
+    font-size: 12.5px;
+    color: #374151;
+    background: #fff;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.top-bar-btn:hover {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+    color: #111827;
+    text-decoration: none;
+}
+
+.top-bar-btn i {
+    font-size: 13px;
+    color: #6b7280;
+}
+
+/* Round user-avatar badge */
+.user-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #9ca3af;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+
+.user-avatar:hover {
+    background: #6b7280;
+}
+
+/* ---------- Nav Link — Disabled (endpoint not yet in v2) ---------- */
+.nav-link-disabled {
+    opacity: 0.45;
+    cursor: not-allowed !important;
+    pointer-events: none;
+}
+
+/* ---------- User Profile Link ---------- */
+.nav-link-user {
+    margin: 0;
+}
+
+.nav-link-user .nav-link {
+    color: white !important;
+    text-decoration: none;
+    padding-left: 0;
+    padding-right: 0;
+}
