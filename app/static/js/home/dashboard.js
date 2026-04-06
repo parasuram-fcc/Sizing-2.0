@@ -959,6 +959,53 @@ $(document).ready(function () {
         });
     });
 
+    /* ── Import project modal ── */
+    $(document).on('show.bs.modal', '#importProjModal', function () {
+        const { projectId, itemId } = getCurrentIds();
+        const isFcc     = document.getElementById('isFccProject').value === 'true';
+        const projType  = parseInt(document.getElementById('projectType').value || '1', 10);
+        const quoteField    = document.getElementById('importQuoteField');
+        const quoteInput    = document.getElementById('importQuoteNo');
+        const quoteFeedback = document.getElementById('importQuoteFeedback');
+        const form          = document.getElementById('importProjForm');
+
+        /* Set form action to the current project/item */
+        form.action = `/project/import-project/proj-${projectId}/item-${itemId}`;
+
+        /* Show quote field only for FCC live users */
+        const needsQuote = isFcc && projType === 1;
+        quoteField.style.display = needsQuote ? '' : 'none';
+        quoteInput.required      = needsQuote;
+
+        /* Reset state */
+        quoteInput.value    = '';
+        quoteFeedback.textContent = '';
+        quoteFeedback.className   = 'form-text';
+        document.getElementById('importProjFile').value = '';
+
+        /* Submit button: disabled until quote is validated (FCC only) */
+        $('#importProjSubmitBtn').prop('disabled', needsQuote);
+    });
+
+    /* Quote number live validation — disable submit while checking, enable only on valid */
+    $(document).on('input', '#importQuoteNo', function () {
+        $('#importProjSubmitBtn').prop('disabled', true);
+        checkQuoteNumber(this.value, document.getElementById('importQuoteFeedback'), function (isValid) {
+            $('#importProjSubmitBtn').prop('disabled', !isValid);
+        });
+    });
+
+    /* Submit handler */
+    $(document).on('click', '#importProjSubmitBtn', function () {
+        const file = document.getElementById('importProjFile').files[0];
+        if (!file) {
+            document.getElementById('importProjFile').reportValidity();
+            return;
+        }
+
+        document.getElementById('importProjForm').submit();
+    });
+
     /* Export project modal — load revisions dynamically */
     $(document).on('show.bs.modal', '#exportProjModal', function () {
         const fccUser   = document.getElementById('isFccProject').value === 'true';
