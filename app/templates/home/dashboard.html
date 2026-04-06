@@ -65,10 +65,10 @@
                         </a>
 
                         {# Import project #}
-                        {# TODO: implement 'importProject' route (GET/POST /project/import/proj-<proj_id>/item-<item_id>) — handles project file upload/import #}
                         <a id="importProjIcon"
                            href="#"
-                           data-toggle="tooltip" title="Upload" data-placement="bottom">
+                           data-toggle="modal" data-target="#importProjModal"
+                           title="Upload" data-placement="bottom">
                             <svg height="22" viewBox="0 0 24 24" width="20" xmlns="http://www.w3.org/2000/svg">
                                 <path d="m20 6.52897986v12.97202254c0 1.3807119-1.1192881 2.5-2.5 2.5h-11c-1.38071187 0-2.5-1.1192881-2.5-2.5v-15.00000002c0-1.38071188 1.11928813-2.5 2.5-2.5h8.9720225c.1327463-.00841947.2709238.03583949.3815309.14644661l4 4c.1106071.11060712.1548661.24878464.1464466.38153087zm-5-3.52797748h-8.5c-.82842712 0-1.5.67157287-1.5 1.5v15.00000002c0 .8284271.67157288 1.5 1.5 1.5h11c.8284271 0 1.5-.6715729 1.5-1.5v-12.50000002h-3.5c-.2761424 0-.5-.22385763-.5-.5zm1 .70710678v2.29289322h2.2928932zm-4 6.99899764v6.7928932c0 .2761424-.2238576.5-.5.5s-.5-.2238576-.5-.5v-6.7928932l-2.14644661 2.1464466c-.19526215.1952621-.51184463.1952621-.70710678 0-.19526215-.1952622-.19526215-.5118446 0-.7071068l2.99999999-2.99999999c.1952622-.19526215.5118446-.19526215.7071068 0l3 2.99999999c.1952621.1952622.1952621.5118446 0 .7071068-.1952622.1952621-.5118446.1952621-.7071068 0z"/>
                             </svg>
@@ -338,11 +338,65 @@
                 </div>
             </div>
 
+            {# === IMPORT PROJECT MODAL === #}
+            <div class="modal fade" id="importProjModal" tabindex="-1" role="dialog" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered" role="document">
+                    <div class="modal-content modalpopup">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Import Project</h5>
+                            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
+                        <div class="modal-body">
+                            <form id="importProjForm"
+                                  method="POST"
+                                  enctype="multipart/form-data"
+                                  action="#">
+
+                                {# Quote No — shown for FCC live users only (controlled by JS) #}
+                                <div id="importQuoteField" class="mb-3" style="display:none;">
+                                    <label class="form-label fw-semibold">
+                                        Project Quote No <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="text"
+                                           id="importQuoteNo"
+                                           name="quote_no"
+                                           class="form-control"
+                                           placeholder="e.g. Q2600001"
+                                           maxlength="8"
+                                           autocomplete="off">
+                                    <small id="importQuoteFeedback" class="form-text"></small>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">
+                                        Import Excel File <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="file"
+                                           id="importProjFile"
+                                           name="file"
+                                           accept=".xlsx,.xls"
+                                           class="form-control"
+                                           required>
+                                </div>
+
+                            </form>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                            <button type="button" id="importProjSubmitBtn" class="btn btn-info">Import Project</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>{# end .item.shadow #}
     </div>{# end .Itemdetails #}
 
 </div>{# end .projectdetails.project.shadow #}
 
+<script src="{{ url_for('static', filename='js/common/utils.js') }}"></script>
 <script src="{{ url_for('static', filename='js/home/dashboard.js') }}"></script>
 
 {% include "common/footer.html" %}
