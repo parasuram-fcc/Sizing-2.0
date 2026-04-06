@@ -279,7 +279,7 @@ function loadProjects(quoteRange) {
     // Reset item table when switching buckets or on initial no-selection load
     if (quoteRange) resetItemTable();
 
-    // Show spinner while loading
+    // Show spinner while loading // add loader 
     tbody.innerHTML = `
         <tr><td colspan="100%" style="text-align:center;padding:14px;">
             <div class="spinner" style="width:20px;height:20px;border-width:3px;margin:0 auto;"></div>
@@ -819,6 +819,12 @@ document.addEventListener("click", function (e) {
             window.location.href = `/valve_sizing_all_items/proj-${projectId}`;
             break;
     }
+});
+
+/* Project Add button click — navigate to add-project page */
+$('#projectAddBtn').on('click', function () {
+    const { projectId, itemId } = getCurrentIds();
+    window.location.href = `/add-project/`;
 });
 
 /* Item Add icon click — set href before navigation */

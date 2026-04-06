@@ -185,6 +185,8 @@
 
 /* ---------- Table row helpdeskbars ---------- */
 .helpdeskbar {
+    position: relative;
+    z-index: 5;
     background: rgba(255, 255, 255, 0.85);
     backdrop-filter: blur(6px);
     align-items: center;

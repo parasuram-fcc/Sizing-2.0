@@ -8,11 +8,14 @@ All DB logic lives in helpers.py.
 from datetime import datetime
 from inspect import getmembers
 
+import re
+
 from flask import render_template, request, session, flash, jsonify, redirect, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import or_, distinct
 from sqlalchemy.orm import selectinload, load_only
 from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.exc import IntegrityError
 
 from app.blueprints.home import bp
 from app.extensions import db
@@ -1145,5 +1148,156 @@ def submitProjectType():
     user = current_user
     if user.fccUser:
         user.projType = int(proj_type)
-        db.session.commit() 
+        db.session.commit()
     return jsonify({"status":"success"})
+
+
+# ---------------------------------------------------------------------------
+# /add-project — Create a new project
+# ---------------------------------------------------------------------------
+
+from app.blueprints.project.helpers import (  # noqa: E402
+    add_project_metadata,
+    add_project_rels,
+    generate_quote,
+    get_item_for_add_project,
+)
+
+
+@bp.route('/add-project/', methods=['GET', 'POST'])
+# @bp.route('/add-project/proj-<proj_id>/item-<item_id>', methods=['GET', 'POST'])
+@login_required
+def add_project():
+    """
+    GET  — Render the add-project form.
+    POST — Validate, create projectMaster + first item, redirect to dashboard.
+
+    Business logic unchanged from addProject() in app.py.
+    Metadata is a targeted subset (replaces full metadata() call).
+    Item is loaded with load_only — no relationship lazy-loads in the template.
+    """
+    metadata_ = add_project_metadata()
+    # if item_id:
+    #     item  = get_item_for_add_project(item_id)
+    # else:
+    #     item  = None
+
+    if request.method == 'POST':
+        user = current_user
+        a    = request.form.to_dict(flat=False)
+
+        # ── 1. Determine quote number and project type ────────────────────
+        if user.fccUser and user.projType == 1:
+            fccproject = True
+            quote_no   = a['quoteNo'][0].strip()
+            if not re.fullmatch(r"Q\d{7}", quote_no):
+                flash("Quote format should be 'Q' followed by 7 digit Number", 'failure')
+                return render_template(
+                    'home/project_details.html',
+                    metadata=metadata_, user=user, #item=item, proj_id=proj_id,
+                )
+
+        elif user.fccUser and user.projType == 2:
+            fccproject = None
+            quote_no   = generate_quote("T")
+
+        else:
+            fccproject = False
+            quote_no   = generate_quote("C")
+
+        proj_id = str(quote_no)
+
+        # ── 2. Create projectMaster ───────────────────────────────────────
+        new_project = projectMaster(
+            quoteNo              = proj_id,
+            isFccProject         = fccproject,
+            isObsolete           = False,
+            projectRef           = a['projectRef'][0],
+            enquiryRef           = a['enquiryRef'][0],
+            enquiryReceivedDate  = datetime.strptime(a['enquiryReceivedDate'][0], '%Y-%m-%d'),
+            receiptDate          = datetime.strptime(a['receiptDate'][0], '%Y-%m-%d'),
+            bidDueDate           = datetime.strptime(a['bidDueDate'][0], '%Y-%m-%d'),
+            purpose              = a['purpose'][0],
+            custPoNo             = a['custPoNo'][0],
+            workOderNo           = a['workOderNo'][0],
+            status               = a['status'][0],
+            user                 = current_user,
+            industry             = db.session.get(industryMaster, int(a['industry'][0]))
+                                    if a['industry'][0] != 'OEM'
+                                    else None,
+            region               = db.session.get(regionMaster, int(a['region'][0])),
+            revision             = 0,
+            cur_revno            = 0,
+            # Preferences
+            pressure_unit        = a['pressureUnit'][0],
+            l_flowrate_type      = a['LiquidflowrateType'][0],
+            l_flowrate_unit      = a['LiquidflowrateUnit'][0],
+            g_flowrate_type      = a['GasflowrateType'][0],
+            g_flowrate_unit      = a['GasflowrateUnit'][0],
+            viscosity_type       = a['viscosity_'][0],
+            viscosity_unit       = a['vis_units'][0],
+            length_unit          = a['lengthUnit'][0],
+            temperature_unit     = a['temperatureUnit'][0],
+            trim_exit_velocity   = a['tev'][0],
+            noise_limit          = a['noise_limit'][0],
+        )
+
+        try:
+            db.session.add(new_project)
+            db.session.commit()
+        except IntegrityError as e:
+            db.session.rollback()
+            if 'unique' in str(e.orig).lower() or 'duplicate' in str(e.orig).lower():
+                flash("Quote Number already exists!", 'failure')
+            else:
+                flash("Database error occurred. Please try again.", 'failure')
+            return render_template(
+                'home/project_details.html',
+                metadata=metadata_, user=user#, item=item, proj_id=proj_id,
+            )
+        except Exception:
+            db.session.rollback()
+            flash("Something went wrong. Please try again.", 'failure')
+            return render_template(
+                'home/project_details.html',
+                metadata=metadata_, user=user#, item=item, proj_id=proj_id,
+            )
+
+        # ── 3. Create first item ──────────────────────────────────────────
+        add_item = _add_new_item(new_project, 1, 'A')
+
+        # ── 4. Link company / engineer relationships ──────────────────────
+        project_element = db.session.query(projectMaster).filter_by(quoteNo=proj_id).first()
+        eng_element     = db.session.query(engineerMaster).filter_by(name=a['aEng'][0]).first()
+        add_project_rels(
+            cname     = a['cname'][0],
+            cnameE    = a['cnameE'][0],
+            address   = a['address'][0],
+            addressE  = a['addressE'][0],
+            aEng      = eng_element.id,
+            cEng      = a['cEng'][0],
+            project   = project_element,
+            operation = 'create',
+        )
+
+        flash('Project Added Successfully', 'success')
+
+        # ── 5. Update session bucket ──────────────────────────────────────
+        last_project = new_project.quoteNo
+        if last_project:
+            project_num  = int(last_project[1:])
+            num_suffix   = project_num % 1000
+            bucket_start = (num_suffix // 20) * 20
+            bucket_end   = bucket_start + 19
+            prefix       = last_project[:3]
+            session['selected_bucket'] = (
+                f"{prefix}{str(bucket_start).zfill(5)} - {prefix}{str(bucket_end).zfill(5)}"
+            )
+
+        return redirect(url_for('home.home', proj_id=add_item.projectID, item_id=add_item.id))
+
+    # ── GET ───────────────────────────────────────────────────────────────
+    return render_template(
+        'home/project_details.html',
+        metadata=metadata_, user=current_user#, item=item, proj_id=proj_id,
+    )

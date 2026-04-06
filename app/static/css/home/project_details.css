@@ -1,0 +1,55 @@
+/* ============================================================
+   project_details.css — Add Project page styles
+   ============================================================ */
+
+/* ── Form panels ─────────────────────────────────────────── */
+.projectdetails-form {
+    background-color: white;
+    padding: 15px;
+    width: 95%;
+}
+
+.orderinformation-form {
+    margin-left: 3%;
+    padding: 15px;
+}
+
+/* ── Section headings ────────────────────────────────────── */
+.projectdetail_heading {
+    font-size: 15px;
+}
+
+.preference_heading {
+    font-size: 15px;
+}
+
+/* ── Form controls ──────────────────────────────────��────── */
+.projectdetail_input {
+    width: 100%;
+    height: 70%;
+    font-size: 12px;
+}
+
+.projectdetail_select {
+    width: 100%;
+    height: 70%;
+    font-size: 12px;
+    background-color: white;
+    border: 1px solid #607274;
+}
+
+.preference_select {
+    width: 100%;
+    height: 70%;
+    background-color: white;
+    border: 1px solid #607274;
+}
+
+/* ── Submit button ───────────────────────────────────────── */
+.projectdetail_btn {
+    background-color: #dedbdb;
+    color: black;
+    font-size: 14px;
+    border: none;
+    padding: 5px 15px;
+}
