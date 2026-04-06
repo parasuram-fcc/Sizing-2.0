@@ -1164,6 +1164,34 @@ from app.blueprints.project.helpers import (  # noqa: E402
 )
 
 
+@bp.route('/check_quote', methods=['GET'])
+@login_required
+def check_quote():
+    """
+    Check whether a quote number is already taken.
+
+    Params:
+        quote   — the quote string to test
+        proj_id — (optional) project id to exclude (edit-project case)
+
+    Returns:
+        JSON { is_exists: true/false }
+        403  if caller is not an FCC user
+    """
+    if not current_user.fccUser:
+        return jsonify({'error': 'Forbidden'}), 403
+
+    quote   = request.args.get('quote', '').strip()
+    proj_id = request.args.get('proj_id', None)
+
+    q = db.session.query(projectMaster).filter(projectMaster.quoteNo == quote)
+    if proj_id:
+        q = q.filter(projectMaster.id != int(proj_id))
+
+    exists = q.first() is not None
+    return jsonify({'is_exists': exists})
+
+
 @bp.route('/add-project/', methods=['GET', 'POST'])
 # @bp.route('/add-project/proj-<proj_id>/item-<item_id>', methods=['GET', 'POST'])
 @login_required
@@ -1282,16 +1310,15 @@ def add_project():
 
         flash('Project Added Successfully', 'success')
 
-        # ── 5. Update session bucket ──────────────────────────────────────
+        # ── 5. Update session bucket to new project's range ──────────────
         last_project = new_project.quoteNo
         if last_project:
-            project_num  = int(last_project[1:])
-            num_suffix   = project_num % 1000
-            bucket_start = (num_suffix // 20) * 20
-            bucket_end   = bucket_start + 19
-            prefix       = last_project[:3]
+            prefix       = last_project[:3]          # e.g. "Q26"
+            last_num     = int(last_project[3:])     # e.g. 123
+            bucket_start = (last_num // 100) * 100   # e.g. 100
+            bucket_end   = bucket_start + 99         # e.g. 199
             session['selected_bucket'] = (
-                f"{prefix}{str(bucket_start).zfill(5)} - {prefix}{str(bucket_end).zfill(5)}"
+                f"{prefix}{str(bucket_start).zfill(4)} - {prefix}{str(bucket_end).zfill(4)}"
             )
 
         return redirect(url_for('home.home', proj_id=add_item.projectID, item_id=add_item.id))

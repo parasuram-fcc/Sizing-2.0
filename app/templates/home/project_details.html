@@ -7,6 +7,7 @@
 <script>
     const CUSTOMER_NAMES = {{ metadata['notes_dict_'] | tojson }};
     const UNITS_DICT     = {{ metadata['units_dict']   | tojson }};
+    const IS_FCC_PROJ    = {{ (user.fccUser == True and user.projType == 1) | tojson }};
 </script>
 
 <form action="{{ url_for('home.add_project') }}" method="post"> {# , proj_id=proj_id, item_id=item.id #}
@@ -25,9 +26,12 @@
                         <div class="col-6">
                             <label for="quoteno">Quote No</label>
                         </div>
-                        <div class="col-6">
+                        <div class="col-6" style="position:relative;">
                             <input name="quoteNo" class="form-control-sm-sm projectdetail_input"
-                                   maxlength="8" id="quoteno" />
+                                   maxlength="8" id="quoteno"
+                                   placeholder="Q + yy + 5 digits"
+                                   autocomplete="off" />
+                            <small id="quoteno-feedback" class="form-text" style="display:block; position:absolute; top:60%;font-size:0.75rem;"></small>
                         </div>
                     </div>
                     {% endif %}
@@ -402,7 +406,7 @@
 
     <div class="row">
         <div class="col-12 fixed-bottom d-flex justify-content-end mb-3" style="zoom:0.85">
-            <button type="submit" class="btn btn-info btn-sm projectdetail_btn">Add Project</button>
+            <button type="submit" id="add-project-btn" class="btn btn-info btn-sm projectdetail_btn">Add Project</button>
         </div>
     </div>
 

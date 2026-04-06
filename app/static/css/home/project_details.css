@@ -8,6 +8,13 @@
     padding: 15px;
     width: 95%;
 }
+label, input, select, option {
+    font-size: 12px !important;
+}
+input, select, option {
+    border: 1px solid #dadada !important;
+    border-radius: 4px;
+}
 
 .orderinformation-form {
     margin-left: 3%;
