@@ -376,7 +376,7 @@ function submitProject(event, _project) {
 
         $.ajax({
             type: 'POST',
-            url: '/check-project-draftst',
+            url: '/project/check-project-draftst',
             data: { projectId },
             success: function (response) {
                 const first_itemID = response.item_ids ? response.item_ids[0] : itemId;
@@ -384,7 +384,7 @@ function submitProject(event, _project) {
 
                 const doSubmit = () => $.ajax({
                     type: 'POST',
-                    url: '/project-submit',
+                    url: '/project/project-submit',
                     data: { projectId },
                     success: function (resp) {
                         if (resp === "success") {
@@ -469,7 +469,7 @@ function itemDelete(_itemid) {
 
             $.ajax({
                 type: 'POST',
-                url: '/item-delete',
+                url: '/project/item-delete',
                 data: { item_id: itemId, reasonfordelete: result.value },
                 success: function (response) {
                     Swal.fire('Deleted!', response.message, 'success');
@@ -496,7 +496,7 @@ function projectDelete(_proj) {
 
         $.ajax({
             type: 'POST',
-            url: '/project-delete',
+            url: '/project/project-delete',
             data: { projectId },
             success: function (response) {
                 if ('error-message' in response) {
@@ -523,7 +523,7 @@ function deleteDraft(itemNo, selectedRev, selectedRevType, _draft_status) {
 
     $.ajax({
         type: 'POST',
-        url: '/delete-draft',
+        url: '/project/delete-draft',
         data: { itemId: itemNo, itemRevNo: selectedRev, selectedRevType },
         success: function (response) {
             location.reload();
@@ -569,7 +569,7 @@ function passRevision(revno, item, draft_status) {
 
     $.ajax({
         type: 'POST',
-        url: '/get-item-revision',
+        url: '/project/get-item-revision',
         data: { itemNumber: item },
         success: function (revisions) {
             revisions.forEach(function (revision) {
@@ -716,7 +716,7 @@ function getRevision(revType, item, selectedRevision, selectedRevisionType, draf
     if (cnt === 0) {
         $.ajax({
             type: 'POST',
-            url: '/change-revision-status',
+            url: '/project/change-revision-status',
             data: { revisionType: revType, revisionNumber, itemNumber: item, selectedRevisionType },
             success: function (response) {
                 allowNavigation = true;
@@ -747,7 +747,7 @@ function getRevision(revType, item, selectedRevision, selectedRevisionType, draf
 
         $.ajax({
             type: 'POST',
-            url: '/change-revision-status',
+            url: '/project/change-revision-status',
             data: { revisionType: revType, revisionNumber, itemNumber: item, selectedRevisionType },
             success: function (response) {
                 if (response[0].itemId && response[1].projId) {
@@ -824,7 +824,7 @@ document.addEventListener("click", function (e) {
 /* Project Add button click — navigate to add-project page */
 $('#projectAddBtn').on('click', function () {
     const { projectId, itemId } = getCurrentIds();
-    window.location.href = `/add-project/`;
+    window.location.href = `/project/add-project/`;
 });
 
 /* Item Add icon click — set href before navigation */
@@ -864,7 +864,7 @@ document.getElementById("projectlist").addEventListener("click", function (e) {
 
     document.getElementById("itemsLoader").style.display = "block";
 
-    fetch(`/get_items_only/proj-${projectId}`)
+    fetch(`/project/get_items_only/proj-${projectId}`)
         .then(res => res.json())
         .then(data => {
             updateItemsList(data.items);
@@ -900,7 +900,7 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
     }
 
-    fetch(`/get_items_only/proj-${projectId}`)
+    fetch(`/project/get_items_only/proj-${projectId}`)
         .then(res => res.json())
         .then(data => {
             updateItemsList(data.items);
@@ -914,7 +914,7 @@ window.addEventListener("popstate", function (event) {
     if (!event.state) return;
 
     const { projId, itemId } = event.state;
-    fetch(`/get_items_only/proj-${projId}`)
+    fetch(`/project/get_items_only/proj-${projId}`)
         .then(res => res.json())
         .then(data => {
             updateItemsList(data.items);
@@ -940,7 +940,7 @@ $(document).ready(function () {
 
         $.ajax({
             type: 'GET',
-            url: '/submit-project-type',
+            url: '/project/submit-project-type',
             data: { proj_type },
             success: function () {
                 const bucketSelect = document.getElementById('bucketSelect');
@@ -987,12 +987,9 @@ $(document).ready(function () {
         $('#importProjSubmitBtn').prop('disabled', needsQuote);
     });
 
-    /* Quote number live validation — disable submit while checking, enable only on valid */
+    /* Quote number live validation — delegate to shared validateAndCheckQuote */
     $(document).on('input', '#importQuoteNo', function () {
-        $('#importProjSubmitBtn').prop('disabled', true);
-        checkQuoteNumber(this.value, document.getElementById('importQuoteFeedback'), function (isValid) {
-            $('#importProjSubmitBtn').prop('disabled', !isValid);
-        });
+        validateAndCheckQuote('#importQuoteNo', '#importQuoteFeedback', '#importProjSubmitBtn');
     });
 
     /* Submit handler */
@@ -1014,7 +1011,7 @@ $(document).ready(function () {
 
         modalBody.innerHTML = '<p class="text-center">Loading revisions...</p>';
 
-        fetch(`/get_project_revisions/${projectId}`)
+        fetch(`/project/get_project_revisions/${projectId}`)
             .then(res => res.json())
             .then(data => {
                 let html = '';
@@ -1047,7 +1044,7 @@ $(document).ready(function () {
         const modalBody = document.getElementById("copyItemModalBody");
         modalBody.innerHTML = '<p class="text-center">Loading revisions...</p>';
 
-        fetch(`/get_item_revisions/item-${itemId}`)
+        fetch(`/project/get_item_revisions/item-${itemId}`)
             .then(res => res.json())
             .then(data => {
                 let html = '';

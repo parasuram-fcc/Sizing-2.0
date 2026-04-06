@@ -43,74 +43,96 @@ RequestManager.prototype.send = function (ajaxOptions) {
 };
 
 // ---------------------------------------------------------------------------
-// checkQuoteNumber(val, feedbackEl, [callback])
-// Validates a quote-number string (format + server uniqueness check).
+// validateAndCheckQuote(inputSel, feedbackSel, btnSel, [projId])
+// Validates a quote-number field (format + server uniqueness) and wires
+// feedback text / input border / submit-button state in one call.
 //
-// val        — the raw input string (will be trimmed internally)
-// feedbackEl — DOM element used to display status messages
-// callback   — optional fn(isValid) called after all checks complete;
-//              isValid is true only when the format is correct AND the
-//              quote is available on the server.
+// inputSel    — jQuery selector for the quote <input>
+// feedbackSel — jQuery selector for the feedback <small>/<span>
+// btnSel      — jQuery selector for the submit button to enable/disable
+// projId      — (optional) project id to exclude from the uniqueness check
+//               (edit-project scenario)
 //
-// Validation is step-by-step (empty → bad first char → non-digits →
-// incomplete length → server check). In-flight requests are aborted when a
-// new call arrives so rapid typing never races.
+// Validation order: empty → bad first char → non-digits after Q →
+// incomplete length → server uniqueness check.
+// One XHR is tracked per inputSel; starting a new check aborts the previous
+// so rapid typing never races.
 // ---------------------------------------------------------------------------
-window.checkQuoteNumber = (function () {
-    var _xhr = null;   // track in-flight request so we can abort on fast typing
+window.validateAndCheckQuote = (function () {
+    var _xhrMap = {};   // one in-flight XHR per input selector
 
-    return function (val, feedbackEl, callback) {
-        val = (val || '').trim();
+    return function (inputSel, feedbackSel, btnSel, projId) {
+        var val  = ($(inputSel).val() || '').trim();
+        var $fb  = $(feedbackSel);
+        var $inp = $(inputSel);
 
-        function setFeedback(text, cls) {
-            feedbackEl.textContent = text;
-            feedbackEl.className   = 'form-text' + (cls ? ' ' + cls : '');
+        function setFeedback(text, state) {
+            $fb.text(text);
+            $fb.removeClass('text-success text-danger text-muted text-warning');
+            $inp.css('border-color', '');
+            if (state === 'ok') {
+                $fb.addClass('text-success');
+                $inp.css('border-color', '#198754');
+            } else if (state === 'error') {
+                $fb.addClass('text-danger');
+                $inp.css('border-color', '#dc3545');
+            } else if (state === 'checking') {
+                $fb.addClass('text-muted');
+            }
         }
 
-        /* ── Step-by-step client-side checks ── */
+        function setBtn(enabled) {
+            $(btnSel).prop('disabled', !enabled);
+        }
+
+        /* ── Format checks (client-side) ── */
         if (val.length === 0) {
             setFeedback('', '');
-            if (callback) callback(false);
+            setBtn(false);
             return;
         }
 
         if (val[0] !== 'Q') {
-            setFeedback('Must start with Q', 'text-danger');
-            if (callback) callback(false);
+            setFeedback('Must start with Q', 'error');
+            setBtn(false);
             return;
         }
 
         if (val.length > 1 && !/^\d+$/.test(val.slice(1))) {
-            setFeedback('After Q, only digits are allowed', 'text-danger');
-            if (callback) callback(false);
+            setFeedback('After Q, only digits are allowed', 'error');
+            setBtn(false);
             return;
         }
 
         if (val.length < 8) {
-            setFeedback('Enter 7 digits after Q (' + val.length + '/8)', 'text-muted');
-            if (callback) callback(false);
+            setFeedback('Enter 7 digits after Q (' + val.length + '/8)', 'checking');
+            setBtn(false);
             return;
         }
 
-        /* ── Format OK (Q + 7 digits) → check uniqueness via API ── */
-        setFeedback('Checking\u2026', 'text-muted');
+        /* ── Format OK → server uniqueness check ── */
+        setFeedback('Checking\u2026', 'checking');
+        setBtn(false);
 
-        if (_xhr) { _xhr.abort(); }
+        if (_xhrMap[inputSel]) { _xhrMap[inputSel].abort(); }
 
-        _xhr = $.get('/check_quote', { quote: val })
+        var params = { quote: val };
+        if (projId) { params.proj_id = projId; }
+
+        _xhrMap[inputSel] = $.get('/project/check_quote', params)
             .done(function (data) {
                 if (data.is_exists) {
-                    setFeedback('Quote number already exists.', 'text-danger');
-                    if (callback) callback(false);
+                    setFeedback('Quote number already exists', 'error');
+                    setBtn(false);
                 } else {
-                    setFeedback('Available', 'text-success');
-                    if (callback) callback(true);
+                    setFeedback('Available', 'ok');
+                    setBtn(true);
                 }
             })
             .fail(function (xhr) {
                 if (xhr.statusText !== 'abort') {
-                    setFeedback('Could not verify \u2014 try again', 'text-warning');
-                    if (callback) callback(false);
+                    setFeedback('Could not verify \u2014 try again', 'error');
+                    setBtn(false);
                 }
             });
     };

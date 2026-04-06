@@ -10,7 +10,7 @@
     const IS_FCC_PROJ    = {{ (user.fccUser == True and user.projType == 1) | tojson }};
 </script>
 
-<form action="{{ url_for('home.add_project') }}" method="post"> {# , proj_id=proj_id, item_id=item.id #}
+<form action="{{ url_for('project.add_project') }}" method="post">
 
     <div class="container-fulid mt-4 ml-1" style="zoom:0.85">
         <div class="row">
@@ -412,7 +412,8 @@
 
 </form>
 
-<script src="{{ url_for('static', filename='js/home/project_details.js') }}"></script>
+<script src="{{ url_for('static', filename='js/common/utils.js') }}"></script>
+<script src="{{ url_for('static', filename='js/project/project_details.js') }}"></script>
 
 {% include "common/footer.html" %}
 {% endblock %}
