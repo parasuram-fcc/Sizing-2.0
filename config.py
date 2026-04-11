@@ -24,6 +24,7 @@ class Config:
 
     GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+    QOUTE_RANGE = os.environ.get("QOUTE_RANGE", env_data["QOUTE_RANGE"]) # in years
 
 class DevelopmentConfig(Config):
     DEBUG = True

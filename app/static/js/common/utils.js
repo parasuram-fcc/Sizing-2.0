@@ -139,6 +139,24 @@ window.validateAndCheckQuote = (function () {
 }());
 
 // ---------------------------------------------------------------------------
+// showFlash(message, category)
+// Injects a flash message into .flash-message-container and auto-removes it.
+// category: 'success' | anything else → failure styling.
+// ---------------------------------------------------------------------------
+window.showFlash = function (message, category) {
+    var $container = $('.flash-message-container');
+    var cssClass   = category === 'success' ? 'flash-success' : 'flash-failure';
+    var $msg = $('<ul class="flash-messages ' + cssClass + '"><li>' + message + '</li></ul>');
+    $container.empty().append($msg).show();
+    setTimeout(function () {
+        $msg.fadeOut(400, function () {
+            $(this).remove();
+            $container.hide();
+        });
+    }, 3000);
+};
+
+// ---------------------------------------------------------------------------
 // showNotification(message, type)
 // Displays a fixed top-right toast. type: 'success' | 'error' | 'warning'
 // Auto-dismisses after 3 seconds.

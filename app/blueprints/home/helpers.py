@@ -7,6 +7,8 @@ Each function has a single responsibility and typed parameters.
 
 from __future__ import annotations
 
+import time
+
 from sqlalchemy import Integer, cast, func, distinct
 from sqlalchemy.orm import joinedload, selectinload, load_only, contains_eager
 
@@ -227,7 +229,7 @@ def apply_project_search(query, search_type: str | None, search_value: str | Non
 # Task 1d — Item list query (for route context — minimal columns)
 # ---------------------------------------------------------------------------
 
-def build_item_query(project_id: int, search_type: str | None, search_value: str | None):
+def build_item_query(project_id: int, search_type: str | None, search_value: str | None):  # unused
     """
     Build the item Query for a given project with minimal column loading.
 
@@ -290,7 +292,7 @@ def build_item_query(project_id: int, search_type: str | None, search_value: str
 # Task 1e — Revision loader
 # ---------------------------------------------------------------------------
 
-def load_revisions(proj_id: int, item_id: int):
+def load_revisions(proj_id: int, item_id: int):  # unused
     """
     Load project and item revisions in one function.
 
@@ -333,7 +335,7 @@ def load_revisions(proj_id: int, item_id: int):
 # Task 1f — Selected project resolver
 # ---------------------------------------------------------------------------
 
-def resolve_selected_project(proj_id, all_projects: list):
+def resolve_selected_project(proj_id, all_projects: list):  # unused
     """
     Return the projectMaster object matching proj_id from all_projects.
 
@@ -549,6 +551,48 @@ def make_project_groups(last_id: str, first_id: str, bucket_size: int = 100) -> 
     last_num = int(last_id[3:].zfill(num_width))
     max_num = 10 ** num_width - 1
 
+    # --- OLD: N COUNT queries (one DB round-trip per bucket) ---
+    # buckets = []
+    # cur_year = first_year
+    # cur_num = first_num
+    # while True:
+    #     start_num = cur_num
+    #     end_num = min(cur_num + bucket_size - 1, max_num)
+    #     start_id = f"{prefix}{cur_year:02d}{start_num:0{num_width}d}"
+    #     end_id = f"{prefix}{cur_year:02d}{end_num:0{num_width}d}"
+    #     is_exists = db.session.query(projectMaster).filter(projectMaster.quoteNo.between(start_id, end_id)).count()
+    #     if is_exists:
+    #         buckets.append(f"{start_id} - {end_id}")
+    #     if cur_year > last_year or (cur_year == last_year and end_num >= last_num):
+    #         break
+    #     if end_num == max_num:
+    #         cur_year += 1
+    #         cur_num = 0
+    #     else:
+    #         cur_num = end_num + 1
+    # return buckets
+    # --- END OLD ---
+
+    # NEW: single query → bucket in Python with O(1) set lookup per iteration.
+    # Fetches all quoteNos in [first_id, last_id] in one DB round-trip, then
+    # maps each to its bucket key (2-digit year, bucket_start_num).
+    # Assumes first_num == 0 so bucket boundaries align to multiples of bucket_size.
+    rows = (
+        db.session.query(projectMaster.quoteNo)
+        .filter(projectMaster.quoteNo.between(first_id, last_id))
+        .all()
+    )
+
+    occupied: set[tuple[int, int]] = set()
+    for (qno,) in rows:
+        if qno and len(qno) >= 8:
+            try:
+                yr = int(qno[1:3])
+                num = int(qno[3:])
+                occupied.add((yr, (num // bucket_size) * bucket_size))
+            except ValueError:
+                pass
+
     buckets = []
     cur_year = first_year
     cur_num = first_num
@@ -557,9 +601,10 @@ def make_project_groups(last_id: str, first_id: str, bucket_size: int = 100) -> 
         start_num = cur_num
         end_num = min(cur_num + bucket_size - 1, max_num)
 
-        start_id = f"{prefix}{cur_year:02d}{start_num:0{num_width}d}"
-        end_id = f"{prefix}{cur_year:02d}{end_num:0{num_width}d}"
-        buckets.append(f"{start_id} - {end_id}")
+        if (cur_year, start_num) in occupied:
+            start_id = f"{prefix}{cur_year:02d}{start_num:0{num_width}d}"
+            end_id = f"{prefix}{cur_year:02d}{end_num:0{num_width}d}"
+            buckets.append(f"{start_id} - {end_id}")
 
         if cur_year > last_year or (cur_year == last_year and end_num >= last_num):
             break
@@ -573,12 +618,29 @@ def make_project_groups(last_id: str, first_id: str, bucket_size: int = 100) -> 
     return buckets
 
 
+# Module-level cache for getLatestFccLiveProject('last') — avoids a DB query
+# on every page load. TTL of 60 s is short enough to reflect new projects quickly.
+_latest_fcc_cache: dict = {'value': None, 'ts': 0.0}
+_LATEST_FCC_TTL = 60  # seconds
+
+
 def getLatestFccLiveProject(res_type: str) -> str | None:
     """
     Return quoteNo of the latest (or near-latest) FCC live project.
 
-    No logic change from original.
+    The 'last' result is cached for 60 seconds to avoid a DB round-trip on
+    every dashboard page load.
     """
+    global _latest_fcc_cache
+
+    now = time.monotonic()
+    if (
+        res_type == 'last'
+        and _latest_fcc_cache['value'] is not None
+        and now - _latest_fcc_cache['ts'] < _LATEST_FCC_TTL
+    ):
+        return _latest_fcc_cache['value']
+
     quote_format = r"^Q\d{2}\d+$"
     year = cast(func.substr(projectMaster.quoteNo, 2, 2), Integer)
     suffix = cast(func.right(projectMaster.quoteNo, 5), Integer)
@@ -597,7 +659,10 @@ def getLatestFccLiveProject(res_type: str) -> str | None:
     )
 
     if res_type == "last":
-        return base_query.limit(1).scalar()
+        result = base_query.limit(1).scalar()
+        _latest_fcc_cache = {'value': result, 'ts': now}
+        return result
+
     return base_query.offset(99).limit(1).scalar()
 
 
@@ -655,12 +720,13 @@ def resolve_project_bucket(request, session, last_project: str | None) -> str:
     No logic change from original.
     """
     if last_project:
+        prefix = last_project[:3]
         last_num = int(last_project[3:])
         bucket_start = (last_num // 100) * 100
         bucket_end = bucket_start + 99
         default_bucket = (
-            f"Q26{str(bucket_start).zfill(4)} - "
-            f"Q26{str(bucket_end).zfill(4)}"
+            f"{prefix}{str(bucket_start).zfill(4)} - "
+            f"{prefix}{str(bucket_end).zfill(4)}"
         )
     else:
         default_bucket = "Obsolete"

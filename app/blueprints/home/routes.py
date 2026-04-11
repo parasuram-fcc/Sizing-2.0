@@ -8,7 +8,7 @@ Routes:
   GET /load_testcase_projects
 """
 
-from flask import render_template, request, session, flash, jsonify
+from flask import render_template, request, session, jsonify
 from flask_login import current_user, login_required
 from sqlalchemy import or_
 from sqlalchemy.orm import selectinload, load_only
@@ -46,6 +46,8 @@ from app.blueprints.home.helpers import (
     serialize_item,
     serialize_project,
 )
+from config import Config
+from datetime import datetime
 
 
 # ---------------------------------------------------------------------------
@@ -59,194 +61,75 @@ def home(proj_id, item_id):
     """
     Main dashboard route.
 
-    For FCC users: builds a project list from a bucket or 'All'/'Obsolete'
-    selection, applies optional search, resolves the selected project and
-    item, fires revision queries, then renders the dashboard template or
-    returns partial HTML/JSON for AJAX requests.
+    Resolves the bucket list for FCC users (projType == 1) and renders the
+    dashboard shell. Project rows and item rows are populated client-side via
+    /load_projects and /project/get_items_only AJAX calls, so no heavy
+    project/item/revision queries are fired here.
     """
     user = current_user
     selected_bucket = None
     all_buckets = []
-    all_projects = []
-    use_quote_order = False
-    suffix = year = None
 
     # =========================================================
-    # 1. BUILD PROJECT QUERY
+    # 1. BUCKET LIST — FCC projType==1 only
     # =========================================================
     if user.fccUser:
-        user_ids_subq = get_fcc_user_ids()
-        last_Q26 = get_last_Q26()
-        last_Q25 = get_last_Q25()
-
         if not user.projType:
             user.projType = 1
 
         if user.projType == 1:
-            getLatestFccLiveProject('last')
-
-            selected_bucket = resolve_project_bucket(request, session, last_Q26)
-
-            Q26_buckets = make_project_groups(last_Q26, 'Q2600000', 100)[::-1]
-            Q25_buckets = make_project_groups(last_Q25, 'Q2500000', 100)[::-1]
-            all_buckets.extend(Q26_buckets)
-            all_buckets.extend(Q25_buckets)
+            last_project = getLatestFccLiveProject('last')
+            selected_bucket = resolve_project_bucket(request, session, last_project)
+            from_year = datetime.today().year - int(Config.QOUTE_RANGE)
+            all_buckets = make_project_groups(last_project, f'Q{str(from_year)}00000', 100)[::-1]
             all_buckets += ["All", "Obsolete"]
 
-            obsolete = selected_bucket == 'Obsolete'
-            show_all = selected_bucket == 'All'
-
-            query_, suffix, year = build_project_query(
-                user_ids_subq, selected_bucket, obsolete, show_all
-            )
-            use_quote_order = not obsolete
-
-        elif user.projType == 2:
-            query_ = (
-                db.session.query(projectMaster)
-                .options(
-                    load_only(*_PROJECT_LOAD_ONLY),
-                    selectinload(projectMaster.region).load_only(regionMaster.name),
-                    selectinload(projectMaster.industry).load_only(industryMaster.name),
-                    selectinload(projectMaster.user).load_only(
-                        userMaster.email, userMaster.fccUser
-                    ),
-                )
-                .filter(
-                    projectMaster.createdById.in_(user_ids_subq),
-                    or_(
-                        projectMaster.quoteNo.like('Q24TC%'),
-                        projectMaster.quoteNo.like('Q25TC%'),
-                        projectMaster.quoteNo.like('Q26TC%'),
-                        projectMaster.quoteNo.like('T%'),
-                    ),
-                )
-            )
-
-    else:
-        query_ = (
-            db.session.query(projectMaster)
-            .options(
-                load_only(*_PROJECT_LOAD_ONLY),
-                selectinload(projectMaster.region).load_only(regionMaster.name),
-                selectinload(projectMaster.industry).load_only(industryMaster.name),
-                selectinload(projectMaster.user).load_only(
-                    userMaster.email, userMaster.fccUser
-                ),
-            )
-            .filter(projectMaster.user == current_user)
-        )
-
     # =========================================================
-    # 2. APPLY SEARCH + EXECUTE
+    # 2. RANDOM DATA FLAG
     # =========================================================
-    search_type  = request.args.get('search_type')
-    search_value = request.args.get('search_value')
-    row_type     = request.args.get('type')
-
-    if row_type == 'project' and search_type and search_value:
-        query_ = apply_project_search(query_, search_type, search_value)
-
-    if use_quote_order:
-        all_projects = query_.order_by(year.desc(), suffix.desc()).all()
-    else:
-        all_projects = query_.order_by(projectMaster.id.desc()).all()
-
-    if not all_projects:
-        flash('No projects to display', 'failure')
-
-    # =========================================================
-    # 3. RESOLVE SELECTED PROJECT
-    # =========================================================
-    if proj_id:
-        selected_project = resolve_selected_project(proj_id, all_projects)
-        random_data = 'no'
-    else:
-        selected_project = all_projects[0] if all_projects else None
-        if selected_project:
-            proj_id = selected_project.id
-        random_data = 'yes'
-
+    random_data = 'no' if proj_id else 'yes'
     if request.args.get('reload_source') == 'project_dropdown':
         random_data = 'yes'
 
     # =========================================================
-    # 4. ITEMS
+    # 3. AJAX DISPATCH — items only (projects go via /load_projects)
     # =========================================================
-    project_id_for_items = (
-        selected_project.id if selected_project
-        else (int(proj_id) if proj_id else None)
-    )
+    row_type     = request.args.get('type')
+    search_type  = request.args.get('search_type')
+    search_value = request.args.get('search_value')
 
-    items_list    = []
-    item_element  = None
-
-    if project_id_for_items:
-        item_query = build_item_query(
-            project_id_for_items,
-            search_type if row_type == 'item' else None,
-            search_value if row_type == 'item' else None,
-        )
-        items_list   = item_query.order_by(itemMaster.itemNumber.asc()).all()
-        item_element = items_list[0] if items_list else None
-
-    resolved_item_id = item_element.id if item_element else None
-
-    # =========================================================
-    # 5. REVISIONS
-    # =========================================================
-    if proj_id and resolved_item_id:
-        proj_rev, item_rev = load_revisions(int(proj_id), resolved_item_id)
-    else:
-        proj_rev, item_rev = [0], [0]
-
-    if not user.fccUser:
-        proj_rev, item_rev = [0], [0]
-
-    # =========================================================
-    # 6. AJAX DISPATCH
-    # =========================================================
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-
-        if row_type == 'item':
-            if project_id_for_items:
-                items = get_items_for_project(
-                    project_id_for_items, search_type, search_value
-                )
-                if items:
-                    return jsonify({"items": [serialize_item(i) for i in items]})
-            return jsonify({"output": "no data"})
-
-        elif row_type == 'project':
-            return render_template(
-                "project_rows.html",
-                projects=all_projects,
-                item=item_element,
-                random_data=random_data,
-            )
-
-        return ''
+        if row_type == 'item' and proj_id:
+            items = get_items_for_project(proj_id, search_type, search_value)
+            if items:
+                return jsonify({"items": [serialize_item(i) for i in items]})
+        return jsonify({"output": "no data"})
 
     # =========================================================
-    # 7. FULL PAGE RENDER
+    # 4. PROJ_REF — single-column query only when a project is selected
+    #    (JS re-fetches the full project/item lists via /load_projects
+    #     and /project/get_items_only, so we don't load them here)
     # =========================================================
-    proj_ref = selected_project.projectRef if selected_project else ''
+    if proj_id:
+        proj_ref = (
+            db.session.query(projectMaster.projectRef)
+            .filter_by(id=proj_id)
+            .scalar() or ''
+        )
+    else:
+        proj_ref = ''
 
+    # =========================================================
+    # 5. FULL PAGE RENDER
+    # =========================================================
     return render_template(
         'home/dashboard.html',
         random_data=random_data,
         user=current_user,
         selected_bucket=selected_bucket,
-        projects=all_projects,
-        item=item_element,
-        f_projId=all_projects[0].id if all_projects else None,
-        f_itemId=items_list[0].id if items_list else None,
-        items_len=len(items_list),
-        page='home',
-        proj_rev=proj_rev,
-        item_rev=item_rev,
         all_buckets=all_buckets,
         proj_ref=proj_ref,
+        page='home',
     )
 
 
@@ -268,8 +151,8 @@ def load_projects():
             user.projType = 1
 
         if user.projType == 1:
-            last_Q26 = get_last_Q26()
-            last_Q25 = get_last_Q25()
+            # last_Q26 = get_last_Q26()
+            # last_Q25 = get_last_Q25()
 
             quote_range = request.args.get('quote_range')
             if quote_range:
@@ -278,8 +161,9 @@ def load_projects():
             elif session.get('selected_bucket'):
                 selected_bucket = session['selected_bucket']
             else:
-                if last_Q26:
-                    last_num     = int(last_Q26[3:])
+                latest_proj = getLatestFccLiveProject()
+                if latest_proj:
+                    last_num     = int(latest_proj[3:])
                     bucket_start = (last_num // 100) * 100
                     bucket_end   = bucket_start + 99
                     selected_bucket = (
