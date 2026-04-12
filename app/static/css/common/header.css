@@ -43,6 +43,12 @@
     color: #991b1b;
 }
 
+.flash-warning {
+    background: #fef9c3;
+    border-left: 4px solid #eab308;
+    color: #713f12;
+}
+
 /* ---------- Top Bar ---------- */
 .top-bar {
     position: fixed;

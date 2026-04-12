@@ -86,6 +86,7 @@ from app.blueprints.home.helpers import (
     getLatestFccLiveProject,
     serialize_item,
 )
+from app.utils.helpers import error_handler
 
 
 # ---------------------------------------------------------------------------
@@ -223,27 +224,28 @@ def check_quote():
 
 @bp.route('/add-project/', methods=['GET', 'POST'])
 @login_required
+@error_handler
 def add_project():
     """
     GET  — Render the add-project form.
-    POST — Validate, create projectMaster + first item, redirect to dashboard.
+    POST — JSON body. Validate, create projectMaster + first item.
+           Returns JSON {status, project_id, item_id} on success
+           or {status, error} on failure.
     """
-    metadata_ = add_project_metadata()
 
     if request.method == 'POST':
         user = current_user
-        a    = request.form.to_dict(flat=False)
+        a    = request.get_json()
 
         # ── 1. Determine quote number and project type ────────────────────
         if user.fccUser and user.projType == 1:
             fccproject = True
-            quote_no   = a['quoteNo'][0].strip()
+            quote_no   = a['quoteNo'].strip()
             if not re.fullmatch(r"Q\d{7}", quote_no):
-                flash("Quote format should be 'Q' followed by 7 digit Number", 'failure')
-                return render_template(
-                    'project/project_details.html',
-                    metadata=metadata_, user=user,
-                )
+                return jsonify({
+                    'status': 'error',
+                    'error': "Quote format should be 'Q' followed by 7 digit Number",
+                }), 400
 
         elif user.fccUser and user.projType == 2:
             fccproject = None
@@ -254,81 +256,72 @@ def add_project():
             quote_no   = generate_quote("C")
 
         proj_id = str(quote_no)
-
         # ── 2. Create projectMaster ───────────────────────────────────────
-        new_project = projectMaster(
-            quoteNo              = proj_id,
-            isFccProject         = fccproject,
-            isObsolete           = False,
-            projectRef           = a['projectRef'][0],
-            enquiryRef           = a['enquiryRef'][0],
-            enquiryReceivedDate  = datetime.strptime(a['enquiryReceivedDate'][0], '%Y-%m-%d'),
-            receiptDate          = datetime.strptime(a['receiptDate'][0], '%Y-%m-%d'),
-            bidDueDate           = datetime.strptime(a['bidDueDate'][0], '%Y-%m-%d'),
-            purpose              = a['purpose'][0],
-            custPoNo             = a['custPoNo'][0],
-            workOderNo           = a['workOderNo'][0],
-            status               = a['status'][0],
-            user                 = current_user,
-            industry             = db.session.get(industryMaster, int(a['industry'][0]))
-                                    if a['industry'][0] != 'OEM'
-                                    else None,
-            region               = db.session.get(regionMaster, int(a['region'][0])),
-            revision             = 0,
-            cur_revno            = 0,
-            # Preferences
-            pressure_unit        = a['pressureUnit'][0],
-            l_flowrate_type      = a['LiquidflowrateType'][0],
-            l_flowrate_unit      = a['LiquidflowrateUnit'][0],
-            g_flowrate_type      = a['GasflowrateType'][0],
-            g_flowrate_unit      = a['GasflowrateUnit'][0],
-            viscosity_type       = a['viscosity_'][0],
-            viscosity_unit       = a['vis_units'][0],
-            length_unit          = a['lengthUnit'][0],
-            temperature_unit     = a['temperatureUnit'][0],
-            trim_exit_velocity   = a['tev'][0],
-            noise_limit          = a['noise_limit'][0],
-        )
-
         try:
+            new_project = projectMaster(
+                quoteNo              = proj_id,
+                isFccProject         = fccproject,
+                isObsolete           = False,
+                projectRef           = a['projectRef'],
+                enquiryRef           = a['enquiryRef'],
+                enquiryReceivedDate  = datetime.strptime(a['enquiryReceivedDate'], '%Y-%m-%d'),
+                receiptDate          = datetime.strptime(a['receiptDate'], '%Y-%m-%d'),
+                bidDueDate           = datetime.strptime(a['bidDueDate'], '%Y-%m-%d'),
+                purpose              = a['purpose'],
+                custPoNo             = a['custPoNo'],
+                workOderNo           = a['workOderNo'],
+                status               = a['status'],
+                user                 = current_user,
+                industry             = db.session.get(industryMaster, int(a['industry']))
+                                        if a['industry'] != 'OEM'
+                                        else None,
+                region               = db.session.get(regionMaster, int(a['region'])),
+                revision             = 0,
+                cur_revno            = 0,
+                # Preferences
+                pressure_unit        = a['pressureUnit'],
+                l_flowrate_type      = a['LiquidflowrateType'],
+                l_flowrate_unit      = a['LiquidflowrateUnit'],
+                g_flowrate_type      = a['GasflowrateType'],
+                g_flowrate_unit      = a['GasflowrateUnit'],
+                viscosity_type       = a['viscosity_'],
+                viscosity_unit       = a['vis_units'],
+                length_unit          = a['lengthUnit'],
+                temperature_unit     = a['temperatureUnit'],
+                trim_exit_velocity   = a['tev'],
+                noise_limit          = a['noise_limit'],
+            )
             db.session.add(new_project)
             db.session.commit()
         except IntegrityError as e:
             db.session.rollback()
             if 'unique' in str(e.orig).lower() or 'duplicate' in str(e.orig).lower():
-                flash("Quote Number already exists!", 'failure')
-            else:
-                flash("Database error occurred. Please try again.", 'failure')
-            return render_template(
-                'project/project_details.html',
-                metadata=metadata_, user=user,
-            )
+                return jsonify({'status': 'error', 'error': 'Quote Number already exists!'}), 400
+            return jsonify({'status': 'error', 'error': 'Database error occurred. Please try again.'}), 500
         except Exception:
             db.session.rollback()
-            flash("Something went wrong. Please try again.", 'failure')
-            return render_template(
-                'project/project_details.html',
-                metadata=metadata_, user=user,
-            )
-
+            return jsonify({'status': 'error', 'error': 'Something went wrong. Please try again.'}), 500
         # ── 3. Create first item ──────────────────────────────────────────
-        add_item = _add_new_item(new_project, 1, 'A')
-
+        try:
+            add_item = _add_new_item(new_project, 1, 'A')
+        except Exception:
+            return jsonify({'status': 'error', 'error': 'Failed to create item. Please try again.'}), 500
         # ── 4. Link company / engineer relationships ──────────────────────
-        project_element = db.session.query(projectMaster).filter_by(quoteNo=proj_id).first()
-        eng_element     = db.session.query(engineerMaster).filter_by(name=a['aEng'][0]).first()
-        add_project_rels(
-            cname     = a['cname'][0],
-            cnameE    = a['cnameE'][0],
-            address   = a['address'][0],
-            addressE  = a['addressE'][0],
-            aEng      = eng_element.id,
-            cEng      = a['cEng'][0],
-            project   = project_element,
-            operation = 'create',
-        )
-
-        flash('Project Added Successfully', 'success')
+        try:
+            project_element = db.session.query(projectMaster).filter_by(quoteNo=proj_id).first()
+            eng_element     = db.session.query(engineerMaster).filter_by(name=a['aEng']).first()
+            add_project_rels(
+                cname     = a['cname'],
+                cnameE    = a['cnameE'],
+                address   = a['address'],
+                addressE  = a['addressE'],
+                aEng      = eng_element.id,
+                cEng      = a['cEng'],
+                project   = project_element,
+                operation = 'create',
+            )
+        except Exception:
+            return jsonify({'status': 'error', 'error': 'Failed to save project relationships. Please try again.'}), 500
 
         # ── 5. Update session bucket to new project's range ──────────────
         last_project = new_project.quoteNo
@@ -338,12 +331,17 @@ def add_project():
             bucket_start = (last_num // 100) * 100
             bucket_end   = bucket_start + 99
             session['selected_bucket'] = (
-                f"{prefix}{str(bucket_start).zfill(4)} - {prefix}{str(bucket_end).zfill(4)}"
+                f"{prefix}{str(bucket_start).zfill(5)} - {prefix}{str(bucket_end).zfill(5)}"
             )
-
-        return redirect(url_for('home.home', proj_id=add_item.projectID, item_id=add_item.id))
+        return jsonify({
+            'status': 'success',
+            'project_id': add_item.projectID,
+            'item_id': add_item.id,
+        })
 
     # ── GET ───────────────────────────────────────────────────────────────
+    metadata_ = add_project_metadata()
+
     return render_template(
         'project/project_details.html',
         metadata=metadata_, user=current_user,
@@ -881,25 +879,24 @@ def item_delete():
 @bp.route('/project-delete', methods=['POST'])
 @login_required
 def project_delete():
-    project_id = request.form['projectId']
+    data       = request.get_json()
+    project_id = data['projectId']
     project_   = db.session.get(projectMaster, int(project_id))
     creator    = db.session.get(userMaster, project_.createdById)
 
     if current_user.id != project_.createdById:
-        return {'error-message': f"Only the project creator '{creator.name}' can delete the project"}
+        return jsonify({'status': 'error', 'message': f"Only the project creator '{creator.name}' can delete the project"})
 
     all_projects = db.session.query(projectMaster).filter_by(user=current_user).all()
 
     if len(all_projects) == 1:
         _, new_item = _new_user_project_item(current_user)
-        flash("Blank Project Added, and project deleted successfully", "success")
         db.session.delete(project_)
         db.session.commit()
-        return {'proj': new_item.project.id, 'item': new_item.id}
+        return jsonify({'status': 'success', 'message': 'Blank project added, deleted project successfully', 'proj': new_item.project.id, 'item': new_item.id})
 
     db.session.delete(project_)
     db.session.commit()
-    flash("Project deleted successfully", "success")
 
     remaining = db.session.query(projectMaster).filter_by(user=current_user).all()
     last_proj  = remaining[-1]
@@ -915,7 +912,7 @@ def project_delete():
             f"{prefix}{str(bucket_start).zfill(5)} - {prefix}{str(bucket_start + 99).zfill(5)}"
         )
 
-    return {'proj': last_proj.id, 'item': last_item.id}
+    return jsonify({'status': 'success', 'message': 'Project deleted successfully', 'proj': last_proj.id, 'item': last_item.id})
 
 
 # ---------------------------------------------------------------------------

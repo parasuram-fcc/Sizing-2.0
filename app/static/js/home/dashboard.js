@@ -192,6 +192,9 @@ function updateProjectsList(projects, selectedProjId) {
         const isSelected  = selectedProjId && String(proj.id) === String(selectedProjId);
         const printPage   = proj.projectRef === 'TESTCASES' ? 'valve_sizing_all_items' : 'generate_csv_project';
 
+    // hiding status, work order number from dashboard
+    // <td class="table1_status pdl-4">${proj.status}</td>
+    // <td class="table1_work pdl-4">${proj.workOrderNo}</td>
         const row = `
         <tr class="project-row${isSelected ? ' selected-row-project' : ''}"
             data-projid="${proj.id}" style="cursor:pointer">
@@ -203,8 +206,7 @@ function updateProjectsList(projects, selectedProjId) {
             <td class="table1_region pdl-4">${proj.region}</td>
             <td class="table1_industry pdl-4">${proj.industry}</td>
             <td class="table1_engineer pdl-4">${proj.engineerName}</td>
-            <td class="table1_status pdl-4">${proj.status}</td>
-            <td class="table1_work pdl-4">${proj.workOrderNo}</td>
+
             <td class="table1_work">
                 <a class="nav-dynamic" data-page="projectRevisionView" href="#">
                     <i class="fa-solid fa-eye"></i>
@@ -233,16 +235,19 @@ function resetItemTable() {
  * Fetch testcase projects from /load_testcase_projects and render them.
  * Called when projType == 2 (FCC users only).
  */
+
+const table_loader = `
+        <tr><td colspan="100%" style="text-align:center;padding:14px;">
+            <div class="spinner" style="width:20px;height:20px;border-width:3px;margin:0 auto;"></div>
+        </td></tr>`
+        
 function loadTestcaseProjects() {
     const tbody     = document.getElementById("projectlist");
     const requestId = ++projectLoadRequestId;
 
     resetItemTable();
 
-    tbody.innerHTML = `
-        <tr><td colspan="100%" style="text-align:center;padding:14px;">
-            <div class="spinner" style="width:20px;height:20px;border-width:3px;margin:0 auto;"></div>
-        </td></tr>`;
+    tbody.innerHTML =table_loader;
 
     const params = new URLSearchParams();
     const searchValue = document.getElementById("search_input").value.trim();
@@ -280,10 +285,7 @@ function loadProjects(quoteRange) {
     if (quoteRange) resetItemTable();
 
     // Show spinner while loading // add loader 
-    tbody.innerHTML = `
-        <tr><td colspan="100%" style="text-align:center;padding:14px;">
-            <div class="spinner" style="width:20px;height:20px;border-width:3px;margin:0 auto;"></div>
-        </td></tr>`;
+    tbody.innerHTML = table_loader;
 
     const params = new URLSearchParams();
     if (quoteRange) params.append('quote_range', quoteRange);
@@ -315,6 +317,17 @@ function selectItemRow(itemId) {
         row.classList.remove("selected-row-item");
         if (row.dataset.itemid == itemId) {
             row.classList.add("selected-row-item");
+            sessionStorage.setItem('item_id', itemId);
+        }
+    });
+}
+
+function selectProjectRow(projectId) {
+    document.querySelectorAll(".project-row").forEach(row => {
+        row.classList.remove("selected-row-project");
+        if (row.dataset.projid == projectId) {
+            row.classList.add("selected-row-project");
+            sessionStorage.setItem('proj_id', projectId);
         }
     });
 }
@@ -322,16 +335,7 @@ function selectItemRow(itemId) {
 function attachItemRowHandlers() {
     document.querySelectorAll(".item-row").forEach(row => {
         row.addEventListener("click", function () {
-            const itemId = this.dataset.itemid;
-
-            document.querySelectorAll(".item-row").forEach(r => {
-                r.classList.remove("selected-row-item");
-            });
-
-            this.classList.add("selected-row-item");
-
-            const { projectId } = getCurrentIds();
-            history.pushState({}, "", `/home/proj-${projectId}/item-${itemId}`);
+            selectItemRow(this.dataset.itemid);
         });
     });
 }
@@ -380,7 +384,9 @@ function submitProject(event, _project) {
             data: { projectId },
             success: function (response) {
                 const first_itemID = response.item_ids ? response.item_ids[0] : itemId;
-                const redirectUrl  = `/home/proj-${projectId}/item-${first_itemID}`;
+                sessionStorage.setItem('proj_id', projectId);
+                sessionStorage.setItem('item_id', first_itemID);
+                const redirectUrl = '/home';
 
                 const doSubmit = () => $.ajax({
                     type: 'POST',
@@ -442,8 +448,8 @@ function submitProject(event, _project) {
     });
 }
 
-function itemDelete(_itemid) {
-    const { projectId, itemId } = getCurrentIds();
+function itemDelete(_itemid) { // check for 
+    const { itemId } = getCurrentIds();
 
     if (!itemId) {
         Swal.fire({ title: "Select an item to delete", confirmButtonText: "Ok" });
@@ -473,7 +479,8 @@ function itemDelete(_itemid) {
                 data: { item_id: itemId, reasonfordelete: result.value },
                 success: function (response) {
                     Swal.fire('Deleted!', response.message, 'success');
-                    window.location.href = `/home/proj-${projectId}/item-${itemId}`;
+                    sessionStorage.removeItem('item_id');
+                    window.location.href = '/home';
                 },
                 error: function () {
                     Swal.fire('Error!', 'An error occurred while deleting the item', 'error');
@@ -482,9 +489,9 @@ function itemDelete(_itemid) {
         });
     });
 }
-
+// add event listener for delete.
 function projectDelete(_proj) {
-    const { projectId } = getCurrentIds();
+    const projectId = String(_proj);
 
     Swal.fire({
         title: "Do you want to delete the project?",
@@ -497,16 +504,26 @@ function projectDelete(_proj) {
         $.ajax({
             type: 'POST',
             url: '/project/project-delete',
-            data: { projectId },
+            contentType: 'application/json',
+            data: JSON.stringify({ projectId }),
             success: function (response) {
-                if ('error-message' in response) {
-                    Swal.fire({ icon: 'error', title: 'Permission Denied', text: response['error-message'] });
-                } else {
-                    window.location.href = `/home/proj-${response.proj}/item-${response.item}`;
+                if (response.status === 'error') {
+                    showFlash(response.message, 'warning');
+                    return;
                 }
+
+                // Silently remove the deleted project row
+                const deletedRow = document.querySelector(`tr[data-projid="${projectId}"]`);
+                if (deletedRow) deletedRow.remove();
+
+                sessionStorage.removeItem('proj_id');
+                sessionStorage.removeItem('item_id');
+                resetItemTable();
+
+                showFlash(response.message, 'success');
             },
             error: function () {
-                Swal.fire('Error!', 'An error occurred while deleting the project', 'error');
+                showFlash('An error occurred while deleting the project', 'error');
             }
         });
     });
@@ -721,6 +738,8 @@ function getRevision(revType, item, selectedRevision, selectedRevisionType, draf
             success: function (response) {
                 allowNavigation = true;
                 if (response[0].itemId && response[1].projId) {
+                    sessionStorage.setItem('proj_id', response[1].projId);
+                    sessionStorage.setItem('item_id', response[0].itemId);
                     window.location.href = `/valve-data/proj-${response[1].projId}/item-${response[0].itemId}`;
                 }
             },
@@ -751,6 +770,8 @@ function getRevision(revType, item, selectedRevision, selectedRevisionType, draf
             data: { revisionType: revType, revisionNumber, itemNumber: item, selectedRevisionType },
             success: function (response) {
                 if (response[0].itemId && response[1].projId) {
+                    sessionStorage.setItem('proj_id', response[1].projId);
+                    sessionStorage.setItem('item_id', response[0].itemId);
                     window.location.href = `/valve-data/proj-${response[1].projId}/item-${response[0].itemId}`;
                 }
             },
@@ -776,10 +797,10 @@ document.addEventListener("change", function (e) {
     const selectedRev = e.target.value;
     document.querySelector(".copy_rev_item").value = selectedRev;
 
-    const match = window.location.pathname.match(/proj-(\d+)\/item-(\d+)/);
-    if (!match) { console.error("Project or Item ID not found in URL"); return; }
+    const { projectId, itemId } = getCurrentIds();
+    if (!projectId || !itemId) { console.error("Project or Item ID not found in sessionStorage"); return; }
 
-    document.getElementById("copyItemForm").action = `/copyItem/proj-${match[1]}/item-${match[2]}`;
+    document.getElementById("copyItemForm").action = `/copyItem/proj-${projectId}/item-${itemId}`;
 });
 
 /* projrev radio change — update export form action */
@@ -823,7 +844,6 @@ document.addEventListener("click", function (e) {
 
 /* Project Add button click — navigate to add-project page */
 $('#projectAddBtn').on('click', function () {
-    const { projectId, itemId } = getCurrentIds();
     window.location.href = `/project/add-project/`;
 });
 
@@ -841,44 +861,26 @@ document.getElementById("projectlist").addEventListener("click", function (e) {
     const projectId = row.getAttribute("data-projid");
     if (!projectId) return;
 
-    /* Deselect all project rows */
-    document.getElementsByClassName("project-row").forEach
-        ? Array.from(document.getElementsByClassName("project-row")).forEach(r => {
-            r.classList.remove("selected-row-project");
-            const radio = r.getElementsByTagName("input")[0];
-            if (radio) radio.checked = false;
-        })
-        : (() => {
-            const rows = document.getElementsByClassName("project-row");
-            for (let i = 0; i < rows.length; i++) {
-                rows[i].classList.remove("selected-row-project");
-                const radio = rows[i].getElementsByTagName("input")[0];
-                if (radio) radio.checked = false;
-            }
-        })();
+    selectProjectRow(projectId);
 
-    /* Select current row */
-    row.classList.add("selected-row-project");
-    const radio = row.getElementsByTagName("input")[0];
-    if (radio) radio.checked = true;
-
-    document.getElementById("itemsLoader").style.display = "block";
+    const tbody = document.getElementById("itemsTableBody");
+    tbody.innerHTML = table_loader;
 
     fetch(`/project/get_items_only/proj-${projectId}`)
         .then(res => res.json())
         .then(data => {
             updateItemsList(data.items);
             if (data.items && data.items.length > 0) {
-                history.pushState(
-                    { projId: projectId, itemId: data.items[0].itemId },
-                    "",
-                    `/home/proj-${projectId}/item-${data.items[0].itemId}`
-                );
+                selectItemRow(data.items[0].itemId);
             }
         })
         .catch(err => console.error("Item load error:", err))
-        .finally(() => { document.getElementById("itemsLoader").style.display = "none"; });
 });
+
+$("#bucketSelect").on('change', function () {
+    loadProjects(this.value);
+});
+
 
 /* Initial page load — populate project table, then item table */
 document.addEventListener("DOMContentLoaded", function () {
@@ -893,9 +895,15 @@ document.addEventListener("DOMContentLoaded", function () {
         loadProjects();
     }
 
+    // const bucketSelect = document.getElementById('bucketSelect');
+    // if (bucketSelect) {
+    //     bucketSelect.addEventListener('change', function () {
+    //         allowNavigation = true;
+    //         loadProjects(this.value);
+    //     });
+    // }
+
     if (isRandom === 'yes') {
-        // No specific project selected — show placeholder in item table
-        $(".project-radio").prop('checked', false);
         resetItemTable();
         return;
     }
@@ -918,10 +926,10 @@ window.addEventListener("popstate", function (event) {
         .then(res => res.json())
         .then(data => {
             updateItemsList(data.items);
-            setTimeout(() => {
-                const row = document.querySelector(`.item-row[data-itemid="${itemId}"]`);
-                if (row) row.click();
-            }, 50);
+            // setTimeout(() => {
+            //     const row = document.querySelector(`.item-row[data-itemid="${itemId}"]`);
+            //     if (row) row.click();
+            // }, 50);
         });
 });
 
@@ -1037,10 +1045,9 @@ $(document).ready(function () {
     /* Copy item modal — load item revisions dynamically */
     $(document).on('show.bs.modal', '#copyItemModal', function () {
         const fccUser = document.getElementById('isFccProject').value === 'true';
-        const match   = window.location.pathname.match(/item-(\d+)/);
-        if (!match) { console.warn("No item selected"); return; }
+        const { itemId } = getCurrentIds();
+        if (!itemId) { console.warn("No item selected"); return; }
 
-        const itemId    = match[1];
         const modalBody = document.getElementById("copyItemModalBody");
         modalBody.innerHTML = '<p class="text-center">Loading revisions...</p>';
 

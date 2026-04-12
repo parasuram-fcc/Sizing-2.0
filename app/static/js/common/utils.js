@@ -145,7 +145,9 @@ window.validateAndCheckQuote = (function () {
 // ---------------------------------------------------------------------------
 window.showFlash = function (message, category) {
     var $container = $('.flash-message-container');
-    var cssClass   = category === 'success' ? 'flash-success' : 'flash-failure';
+    var cssClass   = category === 'success'  ? 'flash-success'
+                   : category === 'warning'  ? 'flash-warning'
+                   : 'flash-failure';
     var $msg = $('<ul class="flash-messages ' + cssClass + '"><li>' + message + '</li></ul>');
     $container.empty().append($msg).show();
     setTimeout(function () {

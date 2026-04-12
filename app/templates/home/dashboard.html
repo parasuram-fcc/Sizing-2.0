@@ -103,13 +103,12 @@
 
                         {# Project bucket selector (FCC live projects only) #}
                         {% if user.fccUser and user.projType == 1 %}
-                        <select id="bucketSelect" class="bucket_list"
-                                onchange="allowNavigation=true; loadProjects(this.value)">
-                            {% for projno in all_buckets %}
-                            <option value="{{ projno }}" {% if selected_bucket == projno %}selected{% endif %}>
-                                {{ projno }}
-                            </option>
-                            {% endfor %}
+                        <select id="bucketSelect" class="bucket_list">
+                                {% for bucket in all_buckets %}
+                                <option value="{{ bucket }}" {% if selected_bucket == bucket %}selected style="color: blue;" {% endif %}>
+                                    {{ bucket }}
+                                </option>
+                                {% endfor %}
                         </select>
                         {% endif %}
 
@@ -157,19 +156,17 @@
                     <th class="table1_region">Region</th>
                     <th class="table1_industry">Industry</th>
                     <th class="table1_engineer">Engineer</th>
-                    <th class="table1_status">Status</th>
-                    <th class="table1_work">Work Order No</th>
+                    <!-- <th class="table1_status">Status</th>
+                    <th class="table1_work">Work Order No</th> -->
                     <th class="table1_work">Revision</th>
                     <th class="table1_print">Print</th>
                 </tr>
             </thead>
             <tbody id="projectlist">
                 {# Populated dynamically by loadProjects() in dashboard.js #}
-                <tr id="projectsLoader">
-                    <td colspan="100%" style="text-align:center;padding:14px;">
-                        <div class="spinner" style="width:20px;height:20px;border-width:3px;margin:0 auto;"></div>
-                    </td>
-                </tr>
+                <!-- <div id="ProjectLoader" class="project-loader">
+                    <div class="spinner"></div>
+                </div> -->
             </tbody>
         </table>
     </div>
@@ -197,7 +194,7 @@
 
                                 {# Delete item #}
                                 <a style="cursor:pointer" data-toggle="tooltip" title="Delete"
-                                   data-placement="bottom" onclick="itemDelete('{{ item.id }}')">
+                                   data-placement="bottom" onclick="">
                                     <svg id="i-close" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"
                                          width="11" height="11" fill="none" stroke="black"
                                          stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
@@ -262,10 +259,10 @@
                         </tr>
                     </thead>
                     <tbody id="itemsTableBody">
-                {# Spinner shown while items load #}
-                        <div id="itemsLoader" class="items-loader">
+                    {# Spinner shown while items load #}
+                        <!-- <div id="itemsLoader" class="items-loader">
                             <div class="spinner"></div>
-                        </div>
+                        </div> -->
                     </tbody>
                 </table>
             </div>

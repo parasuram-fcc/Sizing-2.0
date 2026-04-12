@@ -1,7 +1,7 @@
 /**
  * project_details.js — Add Project page behaviour
  *
- * Depends on utils.js (validateAndCheckQuote must be loaded first).
+ * Depends on utils.js (validateAndCheckQuote, showFlash must be loaded first).
  *
  * Data contract (set by project_details.html via <script> block):
  *   CUSTOMER_NAMES  — { companyName: [address, ...], ... }
@@ -38,6 +38,16 @@ function rebuildUnits(selectId, units) {
     $.each(units, function (i, unit) {
         $sel.append($('<option>', { value: unit.id, text: unit.name }));
     });
+}
+
+/* ── Collect form fields as a plain object ──────────────────────────────── */
+
+function collectFormData() {
+    var data = {};
+    $('#add-project-form').serializeArray().forEach(function (field) {
+        data[field.name] = field.value;
+    });
+    return data;
 }
 
 /* ── Document ready ─────────────────────────────────────────────────────── */
@@ -90,6 +100,40 @@ $(document).ready(function () {
             ? UNITS_DICT['vol_flow_gas']
             : UNITS_DICT['mass_flowrate'];
         rebuildUnits('#gas_unit', units);
+    });
+
+    /* ── Form submit → AJAX JSON POST ─────────────────────────────────── */
+
+    // $('#add-project-form').on('submit', function (e) {
+    $('#add-project-btn').on('click', function (e) {
+        e.preventDefault();
+        var $btn = $('#add-project-btn');
+        $btn.prop('disabled', true);
+        $.ajax({
+            url:         ADD_PROJECT_URL,
+            method:      'POST',
+            contentType: 'application/json',
+            data:        JSON.stringify(collectFormData()),
+            success: function (data) {
+                if (data.status === 'success') {
+                    sessionStorage.setItem('proj_id', data.project_id);
+                    sessionStorage.setItem('item_id', data.item_id);
+                    window.location.href = '/home';
+                } else {
+                    showFlash(data.message || 'An unexpected error occurred.', 'error');
+                    $btn.prop('disabled', false);
+                }
+            },
+            error: function (xhr) {
+                var msg = 'An unexpected error occurred.';
+                try {
+                    var resp = JSON.parse(xhr.responseText);
+                    if (resp.error) { msg = resp.error; }
+                } catch (_) {}
+                showFlash(msg, 'error');
+                $btn.prop('disabled', false);
+            },
+        });
     });
 
 });

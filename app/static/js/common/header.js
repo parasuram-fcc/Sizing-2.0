@@ -53,10 +53,11 @@ window.addEventListener("beforeunload", function (event) {
  * Returns { projectId, itemId } — both strings or undefined.
  */
 function getCurrentIds() {
-    const parts = window.location.pathname.split('/');
+    sessionStorage.getItem('proj_id')
+    // const parts = window.location.pathname.split('/');
     return {
-        projectId: parts.find(p => p.startsWith('proj-'))?.replace('proj-', ''),
-        itemId:    parts.find(p => p.startsWith('item-'))?.replace('item-', '')
+        projectId: sessionStorage.getItem('proj_id'),
+        itemId:    sessionStorage.getItem('item_id')
     };
 }
 
@@ -91,7 +92,7 @@ document.addEventListener("click", function (e) {
     }
 
     allowNavigation = true;
-    window.location.href = `/${page}/proj-${projectId}/item-${itemId}`;
+    window.location.href = `/${page}`; // /proj-${projectId}/item-${itemId}
 });
 
 

@@ -5,12 +5,13 @@
 
 {# ── JSON data for project_details.js ── #}
 <script>
-    const CUSTOMER_NAMES = {{ metadata['notes_dict_'] | tojson }};
-    const UNITS_DICT     = {{ metadata['units_dict']   | tojson }};
-    const IS_FCC_PROJ    = {{ (user.fccUser == True and user.projType == 1) | tojson }};
+    const CUSTOMER_NAMES     = {{ metadata['notes_dict_'] | tojson }};
+    const UNITS_DICT         = {{ metadata['units_dict']   | tojson }};
+    const IS_FCC_PROJ        = {{ (user.fccUser == True and user.projType == 1) | tojson }};
+    const ADD_PROJECT_URL    = "{{ url_for('project.add_project') }}";
 </script>
 
-<form action="{{ url_for('project.add_project') }}" method="post">
+<form id="add-project-form">
 
     <div class="container-fulid mt-4 ml-1" style="zoom:0.85">
         <div class="row">
