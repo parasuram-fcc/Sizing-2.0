@@ -14,6 +14,7 @@ from app.models import (
     userMaster, OTP, designationMaster, departmentMaster,
     projectMaster, itemMaster,
 )
+from app.utils.helpers import error_handler
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +55,7 @@ def admin_only(f):
 # ---------------------------------------------------------------------------
 
 @bp.route('/email-otp', methods=["GET", "POST"])
+@error_handler
 def emailOTP():
     form = EmailOTPForm()
     if request.method == 'POST':
@@ -75,6 +77,7 @@ def emailOTP():
 # ---------------------------------------------------------------------------
 
 @bp.route('/admin-register', methods=["GET", "POST"])
+@error_handler
 def register():
     email = session.get('email')
     form = RegisterForm()
@@ -136,6 +139,7 @@ def login_google():
 # ---------------------------------------------------------------------------
 
 @bp.route('/google')
+@error_handler
 def auth_google():
     token = oauth.google.authorize_access_token(leeway=300)
     session["access_token"] = token.get("access_token")
@@ -199,6 +203,7 @@ def auth_google():
 # ---------------------------------------------------------------------------
 
 @bp.route('/login', methods=["GET", "POST"])
+@error_handler
 def login():
     form = LoginForm()
     if request.method == "POST":
@@ -239,6 +244,7 @@ def login():
 # ---------------------------------------------------------------------------
 
 @bp.route('/guest-login')
+@error_handler
 def guest_login():
     session.clear()
     session["guest"] = True
@@ -279,6 +285,7 @@ def logout():
 # ---------------------------------------------------------------------------
 
 @bp.route('/reset-pw', methods=["GET", "POST"])
+@error_handler
 def resetPassword():
     form = ResetPasswordRequestForm()
     if request.method == 'POST':
@@ -302,6 +309,7 @@ def resetPassword():
 # ---------------------------------------------------------------------------
 
 @bp.route('/send_otp', methods=["GET", "POST"])
+@error_handler
 def sendOTPAjax():
     emailID = request.args.get('emailID', '').strip()
     if userMaster.query.filter_by(email=emailID).first():
@@ -323,6 +331,7 @@ def sendOTPAjax():
 # ---------------------------------------------------------------------------
 
 @bp.route('/send-otp', methods=["GET", "POST"])
+@error_handler
 def sendOTPEmail():
     form = ResetPasswordForm()
     email = session.get('reset-email')

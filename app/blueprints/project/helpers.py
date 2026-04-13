@@ -127,30 +127,26 @@ def add_project_metadata() -> dict:
             )
             addresses = (
                 db.session.query(addressMaster)
-                .filter(addressMaster.createdById.in_(fcc_ids_subq))
+                .options(joinedload(addressMaster.company))
+                .filter(
+                    addressMaster.createdById.in_(fcc_ids_subq),
+                    addressMaster.isActive == True,
+                )
                 .all()
             )
         else:
             addresses = (
                 db.session.query(addressMaster)
-                .filter(addressMaster.createdById == user.id)
+                .options(joinedload(addressMaster.company))
+                .filter(
+                    addressMaster.createdById == user.id,
+                    addressMaster.isActive == True,
+                )
                 .all()
             )
 
-        company_ids = [a.company.id for a in addresses]
-        all_companies = (
-            db.session.query(companyMaster)
-            .filter(companyMaster.id.in_(company_ids))
-            .order_by(companyMaster.name.asc())
-            .all()
-        )
-        for company in all_companies:
-            active = (
-                db.session.query(addressMaster)
-                .filter_by(company=company, isActive=True)
-                .all()
-            )
-            notes_dict[company.name] = [a.address for a in active]
+        for a in sorted(addresses, key=lambda x: x.company.name):
+            notes_dict.setdefault(a.company.name, []).append(a.address)
 
     industries = (
         db.session.query(industryMaster)

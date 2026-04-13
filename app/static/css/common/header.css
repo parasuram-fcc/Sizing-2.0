@@ -176,3 +176,21 @@
     padding-left: 0;
     padding-right: 0;
 }
+
+/* ---------- SweetAlert2 custom theme ---------- */
+.swal-custom .swal2-title {
+    font-size: 16px;
+}
+.swal-custom .swal2-popup {
+    width: 350px;
+}
+.swal-custom .swal2-styled {
+    padding: 4px 20px;
+    font-size: 16px;
+}
+
+/* ---------- Help label ---------- */
+.help-label {
+    font-size: 12px;
+    margin-left: 5px;
+}

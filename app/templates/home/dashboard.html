@@ -45,8 +45,7 @@
 
                         {# Delete project (superusers only) #}
                         {% if user.email in ['gokulakrishnan@fccommune.com', 'devayani@fccommune.com', 'parasuram@fccommune.com'] %}
-                        <a style="cursor:pointer" data-toggle="tooltip" title="Delete" data-placement="bottom"
-                           onclick="projectDelete('{{ item.project.id }}')">
+                        <a style="cursor:pointer" data-toggle="tooltip" title="Delete" data-placement="bottom" id="projectDeleteBtn">
                             <svg id="i-close" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"
                                  width="11" height="11" fill="none" stroke="black"
                                  stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
@@ -76,7 +75,7 @@
 
                         {# Submit project (FCC only) #}
                         {% if user.fccUser %}
-                        <a href="#" onclick="submitProject(event, '{{ item.project.id }}')" title="Submit">
+                        <a href="#" title="Submit", id="submitProjectBtn">
                             <svg viewBox="0 0 24 24" width="17" height="16" xmlns="http://www.w3.org/2000/svg">
                                 <path fill="none" stroke="black" stroke-width="2" d="M2 12L10 20L22 4"/>
                             </svg>
@@ -162,7 +161,7 @@
                     <th class="table1_print">Print</th>
                 </tr>
             </thead>
-            <tbody id="projectlist">
+            <tbody id="projectTableBody">
                 {# Populated dynamically by loadProjects() in dashboard.js #}
                 <!-- <div id="ProjectLoader" class="project-loader">
                     <div class="spinner"></div>

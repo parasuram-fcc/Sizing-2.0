@@ -11,6 +11,6 @@ def error_handler(func):
             print(f"Error occurred in {func.__name__}: {e}")
             return jsonify({
                 'status': 'error',
-                'error': str(e)
+                'message': str(e)
             }), 400  # ✅ always return status code
     return wrapper

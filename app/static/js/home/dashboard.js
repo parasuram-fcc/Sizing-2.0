@@ -6,7 +6,9 @@
    isFccProject, projRef, currentQuote, username, randomData).
    ============================================= */
 
-/* =================== GLOBAL STATE =================== */
+
+/* =================== GLOBAL STATE & INIT =================== */
+
 let adminUser = '';
 let current_user_code = '';
 let isFccUser = false;
@@ -18,11 +20,11 @@ let currentRequestId = 0;
 let projectLoadRequestId = 0;
 
 document.addEventListener('DOMContentLoaded', function () {
-    adminUser        = document.getElementById('adminUser').value;
+    adminUser         = document.getElementById('adminUser').value;
     current_user_code = document.getElementById('currentUserCode').value;
-    isFccUser        = document.getElementById('isFccProject').value === 'true';
-    window.PROJ_REF      = document.getElementById('projRef').value;
-    window.CURRENT_QUOTE = document.getElementById('currentQuote').value;
+    isFccUser         = document.getElementById('isFccProject').value === 'true';
+    window.PROJ_REF       = document.getElementById('projRef').value;
+    window.CURRENT_QUOTE  = document.getElementById('currentQuote').value;
 });
 
 
@@ -41,7 +43,9 @@ function formatDateTime(time) {
 }
 
 
-/* =================== SEARCH =================== */
+/* =================== TOPBAR =================== */
+
+// --- Search ---
 
 function toggleSearchType() {
     const dropdown = document.getElementById("search_dropdown");
@@ -104,8 +108,400 @@ function liveSearch(row_type) {
     }, 300);
 }
 
+// --- Quote range switch ---
 
-/* =================== ITEMS =================== */
+$("#bucketSelect").on('change', function () {
+    loadProjects(this.value);
+});
+
+// --- Project type switch ---
+
+$(document).ready(function () {
+    const selectedItemRow = $(".selected-row-item");
+    if (selectedItemRow.length) {
+        tablecontainer2.scrollTo({
+            top: selectedItemRow.offset().top - 470,
+            behavior: "smooth"
+        });
+    }
+
+    // on change PROJECT TYPE — save to DB, then dynamically refresh project & item tables
+    $('.project-type').on('change', function () {
+        const proj_type = $('.project-type').val();
+
+        $.ajax({
+            type: 'GET',
+            url: '/project/submit-project-type',
+            data: { proj_type },
+            success: function () {
+                const bucketSelect = document.getElementById('bucketSelect');
+                if (proj_type === '2') {
+                    if (bucketSelect) bucketSelect.style.display = 'none';
+                    loadTestcaseProjects();
+                } else {
+                    if (bucketSelect) bucketSelect.style.display = '';
+                    resetItemTable();
+                    loadProjects();
+                }
+            },
+            error: function () {
+                console.error('Failed to update project type');
+            }
+        });
+    });
+});
+
+
+/* =================== PROJECT =================== */
+
+const table_loader = `
+        <tr><td colspan="100%" style="text-align:center;padding:14px;">
+            <div class="spinner" style="width:20px;height:20px;border-width:3px;margin:0 auto;"></div>
+        </td></tr>`;
+
+/**
+ * Fetch live projects from /load_projects and render them.
+ * quoteRange — bucket string; if omitted, server uses the session value.
+ * Called when projType == 1.
+ */
+function loadProjects(quoteRange) {
+    const tbody = document.getElementById("projectTableBody");
+    const requestId = ++projectLoadRequestId;
+
+    // Reset item table when switching buckets or on initial no-selection load
+    if (quoteRange) resetItemTable();
+
+    // Show spinner while loading // add loader
+    tbody.innerHTML = table_loader;
+
+    const params = new URLSearchParams();
+    if (quoteRange) params.append('quote_range', quoteRange);
+
+    const searchValue = document.getElementById("search_input").value.trim();
+    if (searchValue) {
+        params.append('search_type',  projectsearchType);
+        params.append('search_value', searchValue);
+    }
+
+    const qs  = params.toString();
+    const url = '/load_projects' + (qs ? '?' + qs : '');
+
+    fetch(url)
+        .then(res => res.json())
+        .then(data => {
+            if (requestId !== projectLoadRequestId) return;   // stale response
+            const { projectId } = getCurrentIds();
+            updateProjectsList(data.projects, projectId);
+        })
+        .catch(err => {
+            console.error("Project load error:", err);
+            tbody.innerHTML = `<tr><td colspan="100%" style="text-align:center;padding:12px;color:#c00;">Error loading projects</td></tr>`;
+        });
+}
+
+/**
+ * Fetch testcase projects from /load_testcase_projects and render them.
+ * Called when projType == 2 (FCC users only).
+ */
+function loadTestcaseProjects() {
+    const tbody     = document.getElementById("projectTableBody");
+    const requestId = ++projectLoadRequestId;
+
+    resetItemTable();
+
+    tbody.innerHTML = table_loader;
+
+    const params = new URLSearchParams();
+    const searchValue = document.getElementById("search_input").value.trim();
+    if (searchValue) {
+        params.append('search_type',  projectsearchType);
+        params.append('search_value', searchValue);
+    }
+
+    const qs  = params.toString();
+    const url = '/load_testcase_projects' + (qs ? '?' + qs : '');
+
+    fetch(url)
+        .then(res => res.json())
+        .then(data => {
+            if (requestId !== projectLoadRequestId) return;
+            const { projectId } = getCurrentIds();
+            updateProjectsList(data.projects, projectId);
+        })
+        .catch(err => {
+            console.error("Testcase project load error:", err);
+            tbody.innerHTML = `<tr><td colspan="100%" style="text-align:center;padding:12px;color:#c00;">Error loading projects</td></tr>`;
+        });
+}
+
+/**
+ * Render project rows into #projectTableBody.
+ * selectedProjId — highlight the matching row (from URL or first-load).
+ */
+function updateProjectsList(projects, selectedProjId) {
+    const tbody = document.getElementById("projectTableBody");
+    tbody.innerHTML = "";
+
+    if (!projects || projects.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="100%" style="text-align:center;padding:12px;color:#666;">No projects to display</td></tr>`;
+        return;
+    }
+
+    projects.forEach(proj => {
+        const isSelected  = selectedProjId && String(proj.id) === String(selectedProjId);
+        const printPage   = proj.projectRef === 'TESTCASES' ? 'valve_sizing_all_items' : 'generate_csv_project';
+
+    // hiding status, work order number from dashboard
+    // <td class="table1_status pdl-4">${proj.status}</td>
+    // <td class="table1_work pdl-4">${proj.workOrderNo}</td>
+        const row = `
+        <tr class="project-row${isSelected ? ' selected-row-project' : ''}"
+            data-projid="${proj.id}" style="cursor:pointer">
+            <td class="table1_quote">${proj.quoteNo}</td>
+            <td class="table1_customer pdl-4">${proj.customerName}</td>
+            <td class="table1_enquiry pdl-4">${proj.enquiryRef}</td>
+            <td class="table1_receipt pdl-4">${proj.receiptDate}</td>
+            <td class="table1_due pdl-4">${proj.dueDate}</td>
+            <td class="table1_region pdl-4">${proj.region}</td>
+            <td class="table1_industry pdl-4">${proj.industry}</td>
+            <td class="table1_engineer pdl-4">${proj.engineerName}</td>
+
+            <td class="table1_work">
+                <a class="nav-dynamic" data-page="projectRevisionView" href="#">
+                    <i class="fa-solid fa-eye"></i>
+                </a>
+            </td>
+            <td class="table1_print">
+                <a class="nav-dynamic" data-page="${printPage}" href="#">
+                    <i class="fa-solid fa-print"></i>
+                </a>
+            </td>
+        </tr>`;
+        tbody.insertAdjacentHTML("beforeend", row);
+    });
+}
+
+function selectProjectRow(projectId) {
+    document.querySelectorAll(".project-row").forEach(row => {
+        row.classList.remove("selected-row-project");
+        if (row.dataset.projid == projectId) {
+            row.classList.add("selected-row-project");
+            sessionStorage.setItem('proj_id', projectId);
+        }
+    });
+}
+
+function projectDelete(_proj) {
+    const projectId = String(_proj);
+
+    Swal.fire({
+        title: "Do you want to delete the project?",
+        showDenyButton: true,
+        confirmButtonText: "Delete",
+        denyButtonText: "Cancel"
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        $.ajax({
+            type: 'POST',
+            url: '/project/project-delete',
+            contentType: 'application/json',
+            data: JSON.stringify({ projectId }),
+            success: function (response) {
+
+                // Silently remove the deleted project row
+                const deletedRow = document.querySelector(`tr[data-projid="${projectId}"]`);
+                if (deletedRow) deletedRow.remove();
+
+                sessionStorage.removeItem('proj_id');
+                sessionStorage.removeItem('item_id');
+                resetItemTable();
+
+                showFlash(response.message, 'success');
+            },
+            error: function (xhr) {
+                var resp = JSON.parse(xhr.responseText);
+                showFlash(resp.message, resp.status)  ;
+            }
+        });
+    });
+}
+
+function submitProject() {
+    const { projectId, itemId } = getCurrentIds();
+
+    if (!projectId) return;
+
+    Swal.fire({
+        title: "Do you want to submit the project?",
+        showDenyButton: true,
+        confirmButtonText: "Yes",
+        denyButtonText: "Cancel",
+        customClass: { container: 'swal-custom' }
+    }).then(result => {
+        if (!result.isConfirmed) return;
+
+        $.ajax({
+            type: 'POST',
+            url: '/project/check-project-draftst',
+            data: { projectId },
+            success: function (response) {
+                const first_itemID = response.item_ids ? response.item_ids[0] : itemId;
+                sessionStorage.setItem('proj_id', projectId);
+                sessionStorage.setItem('item_id', first_itemID);
+                // const redirectUrl = '/home';
+
+                const doSubmit = () => $.ajax({
+                    type: 'POST',
+                    url: '/project/project-submit',
+                    data: { projectId },
+                    success: function (resp) {
+                        if (resp.status === "success") {
+                            Swal.fire({
+                                title: 'Project saved successfully',
+                                confirmButtonText: 'Ok',
+                                icon: 'success',
+                                customClass: { container: 'swal-custom' }
+                            }).then(r => { if (r.isConfirmed)
+                                getItemsByProject(projectId, items => {
+                                    updateItemsList(items);
+                                    if (itemId) selectItemRow(itemId);
+                                });
+                                return;});
+                        } else {
+                            Swal.fire({
+                                title: 'Error proceeding further',
+                                confirmButtonText: 'Ok',
+                                icon: 'error',
+                                customClass: { container: 'swal-custom' }
+                            });
+                        }
+                        // window.location.href = redirectUrl;
+                    },
+                    error: function(xhr){
+                        const resp = JSON.parse(xhr.responseText);
+                        showFlash(resp.message, resp.message);
+                    }
+                });
+
+                // has_submitable=false cases are handled here — no doSubmit needed
+                if (!response.has_submitable) {
+                    if (response.reason === 'all_completed') {
+                        Swal.fire({
+                            title: 'All drafts are already submitted',
+                            confirmButtonText: 'Ok',
+                            customClass: { container: 'swal-custom' }
+                        });
+                    } else if (response.reason === 'no_drafts') {
+                        Swal.fire({
+                            title: 'No drafts available to submit the project',
+                            text: 'Submit one draft and Try again !',
+                            confirmButtonText: 'Ok',
+                            customClass: { container: 'swal-custom' }
+                        });
+                    }
+                    return;
+                } else {
+                    if (response.item_ids) {
+                        const error_msg_1 = `Items such as ${response.item_ids} were not saved as draft`;
+                        const error_msg_2 = 'Items saved as draft will be submitted';
+                        Swal.fire({
+                            title: error_msg_2,
+                            text: error_msg_1,
+                            showDenyButton: true,
+                            confirmButtonText: "Ok",
+                            denyButtonText: "Cancel",
+                            customClass: { container: 'swal-custom' }
+                        }).then(r => {
+                            if (r.isConfirmed) doSubmit();
+                        });
+                    } else {
+                        doSubmit();
+                    }
+                }
+            },
+            error: function (xhr) {
+                var resp = JSON.parse(xhr.responseText);
+                showFlash("An error while saving", resp.status)
+            }
+        });
+    });
+}
+
+/* Project Add button click — navigate to add-project page */
+$('#projectAddBtn').on('click', function () {
+    allowNavigation = true;
+    window.location.href = `/project/add-project/`;
+});
+
+$('#projectDeleteBtn').on('click', function(){
+    proj_id = sessionStorage.getItem('proj_id');
+    projectDelete(proj_id);
+})
+$('#submitProjectBtn').on('click', function(e){
+    e.preventDefault();
+    submitProject();
+})
+
+/* Initial page load — populate project table, then item table */
+document.addEventListener("DOMContentLoaded", function () {
+    const { projectId, itemId } = getCurrentIds();
+    const isRandom = document.getElementById('randomData').value;
+
+    // Load the correct project list based on projType
+    const projType = parseInt(document.getElementById('projectType').value || '1', 10);
+    if (projType === 2) {
+        loadTestcaseProjects();
+    } else {
+        loadProjects();
+    }
+
+    // const bucketSelect = document.getElementById('bucketSelect');
+    // if (bucketSelect) {
+    //     bucketSelect.addEventListener('change', function () {
+    //         allowNavigation = true;
+    //         loadProjects(this.value);
+    //     });
+    // }
+
+    if (isRandom === 'yes') {
+        resetItemTable();
+        return;
+    }
+
+    getItemsByProject(projectId, items => {
+        updateItemsList(items);
+        if (itemId) selectItemRow(itemId);
+    });
+});
+
+/* Project row click — load items for selected project */
+$("#projectTableBody").on("click", function (e) {
+    const row = e.target.closest(".project-row");
+    if (!row) return;
+
+    const projectId = row.getAttribute("data-projid");
+    if (!projectId) return;
+
+    selectProjectRow(projectId);
+
+    const tbody = document.getElementById("itemsTableBody");
+    tbody.innerHTML = table_loader;
+
+    getItemsByProject(projectId, items => {
+        updateItemsList(items);
+        if (items && items.length > 0) selectItemRow(items[0].itemId);
+    });
+});
+
+
+/* =================== ITEM =================== */
+
+function getItemsByProject(projectId, onSuccess) {
+    fetch(`/project/get_items_only/proj-${projectId}`)
+        .then(res => res.json())
+        .then(data => onSuccess(data.items))
+        .catch(() => showFlash("Failed to load items. Please try again.", "error"));
+}
 
 function updateItemsList(items) {
     const tbody = document.getElementById("itemsTableBody");
@@ -170,56 +566,7 @@ function updateItemsList(items) {
         tbody.insertAdjacentHTML("beforeend", row);
     });
 
-    attachItemRowHandlers();
-}
-
-/* =================== PROJECTS =================== */
-
-/**
- * Render project rows into #projectlist.
- * selectedProjId — highlight the matching row (from URL or first-load).
- */
-function updateProjectsList(projects, selectedProjId) {
-    const tbody = document.getElementById("projectlist");
-    tbody.innerHTML = "";
-
-    if (!projects || projects.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="100%" style="text-align:center;padding:12px;color:#666;">No projects to display</td></tr>`;
-        return;
-    }
-
-    projects.forEach(proj => {
-        const isSelected  = selectedProjId && String(proj.id) === String(selectedProjId);
-        const printPage   = proj.projectRef === 'TESTCASES' ? 'valve_sizing_all_items' : 'generate_csv_project';
-
-    // hiding status, work order number from dashboard
-    // <td class="table1_status pdl-4">${proj.status}</td>
-    // <td class="table1_work pdl-4">${proj.workOrderNo}</td>
-        const row = `
-        <tr class="project-row${isSelected ? ' selected-row-project' : ''}"
-            data-projid="${proj.id}" style="cursor:pointer">
-            <td class="table1_quote">${proj.quoteNo}</td>
-            <td class="table1_customer pdl-4">${proj.customerName}</td>
-            <td class="table1_enquiry pdl-4">${proj.enquiryRef}</td>
-            <td class="table1_receipt pdl-4">${proj.receiptDate}</td>
-            <td class="table1_due pdl-4">${proj.dueDate}</td>
-            <td class="table1_region pdl-4">${proj.region}</td>
-            <td class="table1_industry pdl-4">${proj.industry}</td>
-            <td class="table1_engineer pdl-4">${proj.engineerName}</td>
-
-            <td class="table1_work">
-                <a class="nav-dynamic" data-page="projectRevisionView" href="#">
-                    <i class="fa-solid fa-eye"></i>
-                </a>
-            </td>
-            <td class="table1_print">
-                <a class="nav-dynamic" data-page="${printPage}" href="#">
-                    <i class="fa-solid fa-print"></i>
-                </a>
-            </td>
-        </tr>`;
-        tbody.insertAdjacentHTML("beforeend", row);
-    });
+    // attachItemRowHandlers();
 }
 
 function resetItemTable() {
@@ -231,85 +578,12 @@ function resetItemTable() {
         </tr>`;
 }
 
-/**
- * Fetch testcase projects from /load_testcase_projects and render them.
- * Called when projType == 2 (FCC users only).
- */
-
-const table_loader = `
-        <tr><td colspan="100%" style="text-align:center;padding:14px;">
-            <div class="spinner" style="width:20px;height:20px;border-width:3px;margin:0 auto;"></div>
-        </td></tr>`
-        
-function loadTestcaseProjects() {
-    const tbody     = document.getElementById("projectlist");
-    const requestId = ++projectLoadRequestId;
-
-    resetItemTable();
-
-    tbody.innerHTML =table_loader;
-
-    const params = new URLSearchParams();
-    const searchValue = document.getElementById("search_input").value.trim();
-    if (searchValue) {
-        params.append('search_type',  projectsearchType);
-        params.append('search_value', searchValue);
-    }
-
-    const qs  = params.toString();
-    const url = '/load_testcase_projects' + (qs ? '?' + qs : '');
-
-    fetch(url)
-        .then(res => res.json())
-        .then(data => {
-            if (requestId !== projectLoadRequestId) return;
-            const { projectId } = getCurrentIds();
-            updateProjectsList(data.projects, projectId);
-        })
-        .catch(err => {
-            console.error("Testcase project load error:", err);
-            tbody.innerHTML = `<tr><td colspan="100%" style="text-align:center;padding:12px;color:#c00;">Error loading projects</td></tr>`;
+function attachItemRowHandlers() {
+    document.querySelectorAll(".item-row").forEach(row => {
+        row.addEventListener("click", function () {
+            selectItemRow(this.dataset.itemid);
         });
-}
-
-/**
- * Fetch live projects from /load_projects and render them.
- * quoteRange — bucket string; if omitted, server uses the session value.
- * Called when projType == 1.
- */
-function loadProjects(quoteRange) {
-    const tbody = document.getElementById("projectlist");
-    const requestId = ++projectLoadRequestId;
-
-    // Reset item table when switching buckets or on initial no-selection load
-    if (quoteRange) resetItemTable();
-
-    // Show spinner while loading // add loader 
-    tbody.innerHTML = table_loader;
-
-    const params = new URLSearchParams();
-    if (quoteRange) params.append('quote_range', quoteRange);
-
-    const searchValue = document.getElementById("search_input").value.trim();
-    if (searchValue) {
-        params.append('search_type',  projectsearchType);
-        params.append('search_value', searchValue);
-    }
-
-    const qs  = params.toString();
-    const url = '/load_projects' + (qs ? '?' + qs : '');
-
-    fetch(url)
-        .then(res => res.json())
-        .then(data => {
-            if (requestId !== projectLoadRequestId) return;   // stale response
-            const { projectId } = getCurrentIds();
-            updateProjectsList(data.projects, projectId);
-        })
-        .catch(err => {
-            console.error("Project load error:", err);
-            tbody.innerHTML = `<tr><td colspan="100%" style="text-align:center;padding:12px;color:#c00;">Error loading projects</td></tr>`;
-        });
+    });
 }
 
 function selectItemRow(itemId) {
@@ -322,133 +596,33 @@ function selectItemRow(itemId) {
     });
 }
 
-function selectProjectRow(projectId) {
-    document.querySelectorAll(".project-row").forEach(row => {
-        row.classList.remove("selected-row-project");
-        if (row.dataset.projid == projectId) {
-            row.classList.add("selected-row-project");
-            sessionStorage.setItem('proj_id', projectId);
-        }
-    });
-}
-
-function attachItemRowHandlers() {
-    document.querySelectorAll(".item-row").forEach(row => {
-        row.addEventListener("click", function () {
-            selectItemRow(this.dataset.itemid);
-        });
-    });
-}
-
 function updateAddItemUrl(projId, itemId) {
     const btn = document.getElementById("itemAddIcon");
     if (!btn) return;
     btn.href = `/add-item/proj-${projId}/item-${itemId}`;
 }
 
-
-/* =================== EXPORT / COPY =================== */
-
-function exportProj() {
-    $('.export_rev_proj').val($('.projrev:checked').data('id'));
-}
-
-function copyItem() {
-    const selectedRadio = $('.copyrev:checked');
-    if (selectedRadio.length) {
-        $('.copy_rev_item').val(selectedRadio.data('id'));
+$('#itemsTableBody').on('click', function(e){
+    console.log("---new--")
+    const row = e.target.closest('.item-row');
+    if (!row){
+        return;
     }
-}
+    const itemId = row.getAttribute('data-itemid');
+    if (!itemId){
+        return;
+    }
+    selectItemRow(itemId);
+});
 
-
-/* =================== PROJECT ACTIONS =================== */
-
-function submitProject(event, _project) {
-    event.preventDefault();
+/* Item Add icon click — set href before navigation */
+$('#itemAddIcon').on('click', function () {
     const { projectId, itemId } = getCurrentIds();
+    updateAddItemUrl(projectId, itemId);
+});
 
-    if (!projectId) return;
-
-    Swal.fire({
-        title: "Do you want to submit the project?",
-        showDenyButton: true,
-        confirmButtonText: "Save",
-        denyButtonText: "Cancel",
-        customClass: { container: 'swal-custom' }
-    }).then(result => {
-        if (!result.isConfirmed) return;
-
-        $.ajax({
-            type: 'POST',
-            url: '/project/check-project-draftst',
-            data: { projectId },
-            success: function (response) {
-                const first_itemID = response.item_ids ? response.item_ids[0] : itemId;
-                sessionStorage.setItem('proj_id', projectId);
-                sessionStorage.setItem('item_id', first_itemID);
-                const redirectUrl = '/home';
-
-                const doSubmit = () => $.ajax({
-                    type: 'POST',
-                    url: '/project/project-submit',
-                    data: { projectId },
-                    success: function (resp) {
-                        if (resp === "success") {
-                            Swal.fire({
-                                title: 'Project saved successfully',
-                                confirmButtonText: 'Ok',
-                                icon: 'success',
-                                customClass: { container: 'swal-custom' }
-                            }).then(r => { if (r.isConfirmed) location.reload(); });
-                        } else if (resp === "all completed") {
-                            Swal.fire({
-                                title: 'No draft available to submit project',
-                                confirmButtonText: 'Ok',
-                                customClass: { container: 'swal-custom' }
-                            });
-                        } else {
-                            Swal.fire({
-                                title: 'Error proceeding further',
-                                confirmButtonText: 'Ok',
-                                icon: 'error',
-                                customClass: { container: 'swal-custom' }
-                            });
-                        }
-                        window.location.href = redirectUrl;
-                    }
-                });
-
-                if (response.success === 'no') {
-                    const error_msg_1 = `Items such as ${response.item_ids} were not saved as draft`;
-                    const error_msg_2 = 'Items saved as draft will be submitted';
-                    Swal.fire({
-                        title: error_msg_2,
-                        text: error_msg_1,
-                        showDenyButton: true,
-                        confirmButtonText: "Ok",
-                        denyButtonText: "Cancel",
-                        customClass: { container: 'swal-custom' }
-                    }).then(r => {
-                        if (r.isConfirmed) doSubmit();
-                        else window.location.href = redirectUrl;
-                    });
-                } else {
-                    doSubmit();
-                }
-            },
-            error: function () {
-                Swal.fire({
-                    title: 'An error while saving',
-                    confirmButtonText: 'Ok',
-                    icon: 'error',
-                    customClass: { container: 'swal-custom' }
-                });
-            }
-        });
-    });
-}
-
-function itemDelete(_itemid) { // check for 
+// add event listener for delete.
+function itemDelete(_itemid) { // check for
     const { itemId } = getCurrentIds();
 
     if (!itemId) {
@@ -489,48 +663,51 @@ function itemDelete(_itemid) { // check for
         });
     });
 }
-// add event listener for delete.
-function projectDelete(_proj) {
-    const projectId = String(_proj);
 
-    Swal.fire({
-        title: "Do you want to delete the project?",
-        showDenyButton: true,
-        confirmButtonText: "Delete",
-        denyButtonText: "Cancel"
-    }).then(result => {
-        if (!result.isConfirmed) return;
+/* Browser back/forward — restore item list for navigated state */
+window.addEventListener("popstate", function (event) {
+    if (!event.state) return;
 
-        $.ajax({
-            type: 'POST',
-            url: '/project/project-delete',
-            contentType: 'application/json',
-            data: JSON.stringify({ projectId }),
-            success: function (response) {
-                if (response.status === 'error') {
-                    showFlash(response.message, 'warning');
-                    return;
-                }
-
-                // Silently remove the deleted project row
-                const deletedRow = document.querySelector(`tr[data-projid="${projectId}"]`);
-                if (deletedRow) deletedRow.remove();
-
-                sessionStorage.removeItem('proj_id');
-                sessionStorage.removeItem('item_id');
-                resetItemTable();
-
-                showFlash(response.message, 'success');
-            },
-            error: function () {
-                showFlash('An error occurred while deleting the project', 'error');
-            }
-        });
+    const { projId, itemId } = event.state;
+    getItemsByProject(projId, items => {
+        updateItemsList(items);
+        // setTimeout(() => {
+        //     const row = document.querySelector(`.item-row[data-itemid="${itemId}"]`);
+        //     if (row) row.click();
+        // }, 50);
     });
-}
+});
+
+/* nav-dynamic click — handles data-action links (page-specific actions).
+   data-page links are handled by common/header.js. */
+document.addEventListener("click", function (e) {
+    const link = e.target.closest(".nav-dynamic");
+    if (!link) return;
+
+    const action = link.dataset.action;
+    if (!action) return;    // data-page links — let header.js handle them
+
+    e.preventDefault();
+
+    const { projectId, itemId } = getCurrentIds();
+    if (!projectId) { alert("Please select a project first"); return; }
+    switch (action) {
+        case "item-revision":
+            window.location.href = `/projectRevisionView/proj-${projectId}/item-${itemId}`;
+            break;
+        case "project-print":
+            window.location.href = (window.PROJ_REF === "TESTCASES")
+                ? `/generate_csv_testcases/proj-${projectId}/quote-${window.CURRENT_QUOTE}`
+                : `/generate_csv_project/proj-${projectId}/item-${itemId}`;
+            break;
+        case "valvesizingallitems":
+            window.location.href = `/valve_sizing_all_items/proj-${projectId}`;
+            break;
+    }
+});
 
 
-/* =================== REVISION MODAL =================== */
+/* =================== REVISION =================== */
 
 function deleteDraft(itemNo, selectedRev, selectedRevType, _draft_status) {
     if (selectedRevType === 'Completed') {
@@ -787,8 +964,69 @@ function getRevision(revType, item, selectedRevision, selectedRevisionType, draf
     }
 }
 
+/* Copy item modal — load item revisions dynamically */
+$(document).on('show.bs.modal', '#copyItemModal', function () {
+    const fccUser = document.getElementById('isFccProject').value === 'true';
+    const { itemId } = getCurrentIds();
+    if (!itemId) { console.warn("No item selected"); return; }
 
-/* =================== EVENT LISTENERS =================== */
+    const modalBody = document.getElementById("copyItemModalBody");
+    modalBody.innerHTML = '<p class="text-center">Loading revisions...</p>';
+
+    fetch(`/project/get_item_revisions/item-${itemId}`)
+        .then(res => res.json())
+        .then(data => {
+            let html = '';
+            data.forEach(rev => {
+                if (!fccUser) {
+                    html += `
+                        <div class="row ml-4"><div class="form-check">
+                            <input class="form-check-input copyrev" type="radio" name="copy_rev" data-id="0" value="0">
+                            <label class="form-check-label project_lable">${rev.itemRevisionNo ?? rev.status}</label>
+                        </div></div>`;
+                    return;
+                }
+                if (rev.status === 'Completed') {
+                    html += `
+                        <div class="row ml-4"><div class="form-check">
+                            <input class="form-check-input copyrev" type="radio" name="copy_rev"
+                                data-id="${rev.itemRevisionNo}" value="${rev.itemRevisionNo}">
+                            <label class="form-check-label project_lable">Revision ${rev.itemRevisionNo}</label>
+                        </div></div>`;
+                } else if (rev.status === 'In progress') {
+                    html += `
+                        <div class="row ml-4"><div class="form-check">
+                            <input class="form-check-input copyrev" type="radio" name="copy_rev" data-id="-1" value="-1">
+                            <label class="form-check-label project_lable">${rev.status}</label>
+                        </div></div>`;
+                } else if (rev.status === 'Draft Completed') {
+                    html += `
+                        <div class="row ml-4"><div class="form-check">
+                            <input class="form-check-input copyrev" type="radio" name="copy_rev" data-id="0" value="0">
+                            <label class="form-check-label project_lable">${rev.status}</label>
+                        </div></div>`;
+                }
+            });
+            modalBody.innerHTML = html;
+        })
+        .catch(() => {
+            modalBody.innerHTML = '<p class="text-danger text-center">Failed to load revisions</p>';
+        });
+});
+
+
+/* =================== IMPORT / EXPORT =================== */
+
+function exportProj() {
+    $('.export_rev_proj').val($('.projrev:checked').data('id'));
+}
+
+function copyItem() {
+    const selectedRadio = $('.copyrev:checked');
+    if (selectedRadio.length) {
+        $('.copy_rev_item').val(selectedRadio.data('id'));
+    }
+}
 
 /* copyrev radio change — update copy form action */
 document.addEventListener("change", function (e) {
@@ -814,287 +1052,83 @@ document.addEventListener("change", function (e) {
     document.getElementById("exportProjForm").action = `/export-project/proj-${projectId}/item-${itemId}`;
 });
 
-/* nav-dynamic click — handles data-action links (page-specific actions).
-   data-page links are handled by common/header.js. */
-document.addEventListener("click", function (e) {
-    const link = e.target.closest(".nav-dynamic");
-    if (!link) return;
+/* Export project modal — load revisions dynamically */
+$(document).on('show.bs.modal', '#exportProjModal', function () {
+    const fccUser   = document.getElementById('isFccProject').value === 'true';
+    const { projectId } = getCurrentIds();
+    const modalBody = document.getElementById("exportProjModalBody");
 
-    const action = link.dataset.action;
-    if (!action) return;    // data-page links — let header.js handle them
+    modalBody.innerHTML = '<p class="text-center">Loading revisions...</p>';
 
-    e.preventDefault();
-
-    const { projectId, itemId } = getCurrentIds();
-    if (!projectId) { alert("Please select a project first"); return; }
-    switch (action) {
-        case "item-revision":
-            window.location.href = `/projectRevisionView/proj-${projectId}/item-${itemId}`;
-            break;
-        case "project-print":
-            window.location.href = (window.PROJ_REF === "TESTCASES")
-                ? `/generate_csv_testcases/proj-${projectId}/quote-${window.CURRENT_QUOTE}`
-                : `/generate_csv_project/proj-${projectId}/item-${itemId}`;
-            break;
-        case "valvesizingallitems":
-            window.location.href = `/valve_sizing_all_items/proj-${projectId}`;
-            break;
-    }
-});
-
-/* Project Add button click — navigate to add-project page */
-$('#projectAddBtn').on('click', function () {
-    window.location.href = `/project/add-project/`;
-});
-
-/* Item Add icon click — set href before navigation */
-$('#itemAddIcon').on('click', function () {
-    const { projectId, itemId } = getCurrentIds();
-    updateAddItemUrl(projectId, itemId);
-});
-
-/* Project row click — load items for selected project */
-document.getElementById("projectlist").addEventListener("click", function (e) {
-    const row = e.target.closest(".project-row");
-    if (!row) return;
-
-    const projectId = row.getAttribute("data-projid");
-    if (!projectId) return;
-
-    selectProjectRow(projectId);
-
-    const tbody = document.getElementById("itemsTableBody");
-    tbody.innerHTML = table_loader;
-
-    fetch(`/project/get_items_only/proj-${projectId}`)
+    fetch(`/project/get_project_revisions/${projectId}`)
         .then(res => res.json())
         .then(data => {
-            updateItemsList(data.items);
-            if (data.items && data.items.length > 0) {
-                selectItemRow(data.items[0].itemId);
-            }
+            let html = '';
+            data.forEach(rev => {
+                const revVal   = fccUser ? rev.projectRevision : 0;
+                const revLabel = fccUser ? `Revision ${rev.projectRevision}` : `Revision 0`;
+                html += `
+                    <div class="row ml-4">
+                        <div class="form-check">
+                            <input class="form-check-input projrev" type="radio"
+                                name="proj_rev" data-id="${revVal}" value="${revVal}">
+                            <label class="form-check-label project_lable">${revLabel}</label>
+                        </div>
+                    </div>`;
+            });
+            modalBody.innerHTML = html;
         })
-        .catch(err => console.error("Item load error:", err))
+        .catch(() => {
+            modalBody.innerHTML = '<p class="text-danger text-center">Failed to load revisions</p>';
+        });
 });
 
-$("#bucketSelect").on('change', function () {
-    loadProjects(this.value);
-});
-
-
-/* Initial page load — populate project table, then item table */
-document.addEventListener("DOMContentLoaded", function () {
+/* Import project modal — setup form and quote validation */
+$(document).on('show.bs.modal', '#importProjModal', function () {
     const { projectId, itemId } = getCurrentIds();
-    const isRandom = document.getElementById('randomData').value;
+    const isFcc     = document.getElementById('isFccProject').value === 'true';
+    const projType  = parseInt(document.getElementById('projectType').value || '1', 10);
+    const quoteField    = document.getElementById('importQuoteField');
+    const quoteInput    = document.getElementById('importQuoteNo');
+    const quoteFeedback = document.getElementById('importQuoteFeedback');
+    const form          = document.getElementById('importProjForm');
 
-    // Load the correct project list based on projType
-    const projType = parseInt(document.getElementById('projectType').value || '1', 10);
-    if (projType === 2) {
-        loadTestcaseProjects();
-    } else {
-        loadProjects();
-    }
+    /* Set form action to the current project/item */
+    form.action = `/project/import-project/proj-${projectId}/item-${itemId}`;
 
-    // const bucketSelect = document.getElementById('bucketSelect');
-    // if (bucketSelect) {
-    //     bucketSelect.addEventListener('change', function () {
-    //         allowNavigation = true;
-    //         loadProjects(this.value);
-    //     });
-    // }
+    /* Show quote field only for FCC live users */
+    const needsQuote = isFcc && projType === 1;
+    quoteField.style.display = needsQuote ? '' : 'none';
+    quoteInput.required      = needsQuote;
 
-    if (isRandom === 'yes') {
-        resetItemTable();
+    /* Reset state */
+    quoteInput.value    = '';
+    quoteFeedback.textContent = '';
+    quoteFeedback.className   = 'form-text';
+    document.getElementById('importProjFile').value = '';
+
+    /* Submit button: disabled until quote is validated (FCC only) */
+    $('#importProjSubmitBtn').prop('disabled', needsQuote);
+});
+
+/* Quote number live validation — delegate to shared validateAndCheckQuote */
+$(document).on('input', '#importQuoteNo', function () {
+    validateAndCheckQuote('#importQuoteNo', '#importQuoteFeedback', '#importProjSubmitBtn');
+});
+
+/* Import submit handler */
+$(document).on('click', '#importProjSubmitBtn', function () {
+    const file = document.getElementById('importProjFile').files[0];
+    if (!file) {
+        document.getElementById('importProjFile').reportValidity();
         return;
     }
 
-    fetch(`/project/get_items_only/proj-${projectId}`)
-        .then(res => res.json())
-        .then(data => {
-            updateItemsList(data.items);
-            if (itemId) selectItemRow(itemId);
-        })
-        .catch(err => console.error("Initial item load failed:", err));
-});
-
-/* Browser back/forward — restore item list for navigated state */
-window.addEventListener("popstate", function (event) {
-    if (!event.state) return;
-
-    const { projId, itemId } = event.state;
-    fetch(`/project/get_items_only/proj-${projId}`)
-        .then(res => res.json())
-        .then(data => {
-            updateItemsList(data.items);
-            // setTimeout(() => {
-            //     const row = document.querySelector(`.item-row[data-itemid="${itemId}"]`);
-            //     if (row) row.click();
-            // }, 50);
-        });
-});
-
-/* jQuery ready — scroll selected item into view, sync proj-type */
-$(document).ready(function () {
-    const selectedItemRow = $(".selected-row-item");
-    if (selectedItemRow.length) {
-        tablecontainer2.scrollTo({
-            top: selectedItemRow.offset().top - 470,
-            behavior: "smooth"
-        });
-    }
-// on change PROJECT TYPE — save to DB, then dynamically refresh project & item tables
-    $('.project-type').on('change', function () {
-        const proj_type = $('.project-type').val();
-
-        $.ajax({
-            type: 'GET',
-            url: '/project/submit-project-type',
-            data: { proj_type },
-            success: function () {
-                const bucketSelect = document.getElementById('bucketSelect');
-                if (proj_type === '2') {
-                    if (bucketSelect) bucketSelect.style.display = 'none';
-                    loadTestcaseProjects();
-                } else {
-                    if (bucketSelect) bucketSelect.style.display = '';
-                    resetItemTable();
-                    loadProjects();
-                }
-            },
-            error: function () {
-                console.error('Failed to update project type');
-            }
-        });
-    });
-
-    /* ── Import project modal ── */
-    $(document).on('show.bs.modal', '#importProjModal', function () {
-        const { projectId, itemId } = getCurrentIds();
-        const isFcc     = document.getElementById('isFccProject').value === 'true';
-        const projType  = parseInt(document.getElementById('projectType').value || '1', 10);
-        const quoteField    = document.getElementById('importQuoteField');
-        const quoteInput    = document.getElementById('importQuoteNo');
-        const quoteFeedback = document.getElementById('importQuoteFeedback');
-        const form          = document.getElementById('importProjForm');
-
-        /* Set form action to the current project/item */
-        form.action = `/project/import-project/proj-${projectId}/item-${itemId}`;
-
-        /* Show quote field only for FCC live users */
-        const needsQuote = isFcc && projType === 1;
-        quoteField.style.display = needsQuote ? '' : 'none';
-        quoteInput.required      = needsQuote;
-
-        /* Reset state */
-        quoteInput.value    = '';
-        quoteFeedback.textContent = '';
-        quoteFeedback.className   = 'form-text';
-        document.getElementById('importProjFile').value = '';
-
-        /* Submit button: disabled until quote is validated (FCC only) */
-        $('#importProjSubmitBtn').prop('disabled', needsQuote);
-    });
-
-    /* Quote number live validation — delegate to shared validateAndCheckQuote */
-    $(document).on('input', '#importQuoteNo', function () {
-        validateAndCheckQuote('#importQuoteNo', '#importQuoteFeedback', '#importProjSubmitBtn');
-    });
-
-    /* Submit handler */
-    $(document).on('click', '#importProjSubmitBtn', function () {
-        const file = document.getElementById('importProjFile').files[0];
-        if (!file) {
-            document.getElementById('importProjFile').reportValidity();
-            return;
-        }
-
-        document.getElementById('importProjForm').submit();
-    });
-
-    /* Export project modal — load revisions dynamically */
-    $(document).on('show.bs.modal', '#exportProjModal', function () {
-        const fccUser   = document.getElementById('isFccProject').value === 'true';
-        const { projectId } = getCurrentIds();
-        const modalBody = document.getElementById("exportProjModalBody");
-
-        modalBody.innerHTML = '<p class="text-center">Loading revisions...</p>';
-
-        fetch(`/project/get_project_revisions/${projectId}`)
-            .then(res => res.json())
-            .then(data => {
-                let html = '';
-                data.forEach(rev => {
-                    const revVal   = fccUser ? rev.projectRevision : 0;
-                    const revLabel = fccUser ? `Revision ${rev.projectRevision}` : `Revision 0`;
-                    html += `
-                        <div class="row ml-4">
-                            <div class="form-check">
-                                <input class="form-check-input projrev" type="radio"
-                                    name="proj_rev" data-id="${revVal}" value="${revVal}">
-                                <label class="form-check-label project_lable">${revLabel}</label>
-                            </div>
-                        </div>`;
-                });
-                modalBody.innerHTML = html;
-            })
-            .catch(() => {
-                modalBody.innerHTML = '<p class="text-danger text-center">Failed to load revisions</p>';
-            });
-    });
-
-    /* Copy item modal — load item revisions dynamically */
-    $(document).on('show.bs.modal', '#copyItemModal', function () {
-        const fccUser = document.getElementById('isFccProject').value === 'true';
-        const { itemId } = getCurrentIds();
-        if (!itemId) { console.warn("No item selected"); return; }
-
-        const modalBody = document.getElementById("copyItemModalBody");
-        modalBody.innerHTML = '<p class="text-center">Loading revisions...</p>';
-
-        fetch(`/project/get_item_revisions/item-${itemId}`)
-            .then(res => res.json())
-            .then(data => {
-                let html = '';
-                data.forEach(rev => {
-                    if (!fccUser) {
-                        html += `
-                            <div class="row ml-4"><div class="form-check">
-                                <input class="form-check-input copyrev" type="radio" name="copy_rev" data-id="0" value="0">
-                                <label class="form-check-label project_lable">${rev.itemRevisionNo ?? rev.status}</label>
-                            </div></div>`;
-                        return;
-                    }
-                    if (rev.status === 'Completed') {
-                        html += `
-                            <div class="row ml-4"><div class="form-check">
-                                <input class="form-check-input copyrev" type="radio" name="copy_rev"
-                                    data-id="${rev.itemRevisionNo}" value="${rev.itemRevisionNo}">
-                                <label class="form-check-label project_lable">Revision ${rev.itemRevisionNo}</label>
-                            </div></div>`;
-                    } else if (rev.status === 'In progress') {
-                        html += `
-                            <div class="row ml-4"><div class="form-check">
-                                <input class="form-check-input copyrev" type="radio" name="copy_rev" data-id="-1" value="-1">
-                                <label class="form-check-label project_lable">${rev.status}</label>
-                            </div></div>`;
-                    } else if (rev.status === 'Draft Completed') {
-                        html += `
-                            <div class="row ml-4"><div class="form-check">
-                                <input class="form-check-input copyrev" type="radio" name="copy_rev" data-id="0" value="0">
-                                <label class="form-check-label project_lable">${rev.status}</label>
-                            </div></div>`;
-                    }
-                });
-                modalBody.innerHTML = html;
-            })
-            .catch(() => {
-                modalBody.innerHTML = '<p class="text-danger text-center">Failed to load revisions</p>';
-            });
-    });
+    document.getElementById('importProjForm').submit();
 });
 
 
-/* =================== INTRO.JS TOUR =================== */
+/* =================== TOUR =================== */
 
 document.addEventListener('DOMContentLoaded', () => {
     const username = document.getElementById('username').value;

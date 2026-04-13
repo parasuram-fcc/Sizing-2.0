@@ -297,15 +297,15 @@ def add_project():
             db.session.rollback()
             if 'unique' in str(e.orig).lower() or 'duplicate' in str(e.orig).lower():
                 return jsonify({'status': 'error', 'error': 'Quote Number already exists!'}), 400
-            return jsonify({'status': 'error', 'error': 'Database error occurred. Please try again.'}), 500
+            return jsonify({'status': 'error', 'error': 'Database error occurred. Please try again.'}), 400
         except Exception:
             db.session.rollback()
-            return jsonify({'status': 'error', 'error': 'Something went wrong. Please try again.'}), 500
+            return jsonify({'status': 'error', 'error': 'Something went wrong. Please try again.'}), 400
         # ── 3. Create first item ──────────────────────────────────────────
         try:
             add_item = _add_new_item(new_project, 1, 'A')
         except Exception:
-            return jsonify({'status': 'error', 'error': 'Failed to create item. Please try again.'}), 500
+            return jsonify({'status': 'error', 'error': 'Failed to create item. Please try again.'}), 400
         # ── 4. Link company / engineer relationships ──────────────────────
         try:
             project_element = db.session.query(projectMaster).filter_by(quoteNo=proj_id).first()
@@ -321,7 +321,7 @@ def add_project():
                 operation = 'create',
             )
         except Exception:
-            return jsonify({'status': 'error', 'error': 'Failed to save project relationships. Please try again.'}), 500
+            return jsonify({'status': 'error', 'error': 'Failed to save project relationships. Please try again.'}), 400
 
         # ── 5. Update session bucket to new project's range ──────────────
         last_project = new_project.quoteNo
@@ -640,6 +640,7 @@ def change_revision_status():
 
 @bp.route('/check-project-draftst', methods=['POST'])
 @login_required
+@error_handler
 def check_project_draftst():
     proj_id = request.form['projectId']
     project = db.session.get(projectMaster, int(proj_id))
@@ -649,10 +650,20 @@ def check_project_draftst():
         .order_by(itemMaster.itemNumber.asc())
         .all()
     )
+
+    # All items already completed — nothing to submit
+    if not any(i.draft_status in (0, -1) for i in items):
+        return jsonify({'has_submitable': False, 'reason': 'all_completed'})
+
+    # Active items exist but none are proper drafts (all unsaved)
+    has_submitable = any(i.draft_status == 0 for i in items)
+    if not has_submitable:
+        return jsonify({'has_submitable': False, 'reason': 'no_drafts'})
+
+    # Has submittable drafts — flag any unsaved items
     unsaved_ids = [i.id for i in items if i.draft_status == -1]
     if unsaved_ids:
-        return jsonify({'item_ids': unsaved_ids, 'success': 'no'})
-    return jsonify({'success': 'yes'})
+        return jsonify({'item_ids': unsaved_ids, 'has_submitable': True})
 
 
 # ---------------------------------------------------------------------------
@@ -661,6 +672,7 @@ def check_project_draftst():
 
 @bp.route('/project-submit', methods=['POST'])
 @login_required
+@error_handler
 def project_submit():
     proj_id  = request.form['projectId']
     project  = db.session.get(projectMaster, int(proj_id))
@@ -668,76 +680,61 @@ def project_submit():
 
     items = (
         db.session.query(itemMaster)
-        .filter_by(project=project)
+        .filter_by(project=project, draft_status=0)
         .order_by(itemMaster.itemNumber.asc())
         .all()
     )
 
-    has_submittable = any(i.draft_status in (0, -1) for i in items)
-    if not has_submittable:
-        return "all completed"
+    now = datetime.today().strftime("%Y-%m-%d %H:%M")
 
     for item_ in items:
-        if item_.draft_status != 0:
-            continue
         cur_rev = item_.revision
 
         proj_rev_row = projectRevisionTable(
             project=project, projectRevision=last_rev,
             item=item_, itemRevision=cur_rev,
             prepared_by=current_user.code,
-            time=datetime.today().strftime("%Y-%m-%d %H:%M"),
+            time=now,
         )
         db.session.add(proj_rev_row)
-        db.session.commit()
 
         item_rev = db.session.query(itemRevisionTable).filter_by(item=item_, itemRevisionNo=cur_rev).first()
         if item_rev:
             item_rev.status = "Completed"
-            item_rev.time   = datetime.today().strftime("%Y-%m-%d %H:%M")
-            db.session.commit()
+            item_rev.time   = now
 
         valve = valveDetailsMaster.getValveElement(item_, cur_rev)
         if valve:
             valve.draft_status = 1
-            db.session.commit()
 
         for case in db.session.query(caseMaster).filter_by(item=item_, revision=cur_rev).all():
             case.draft_status = 1
-        db.session.commit()
 
         act = db.session.query(actuatorMaster).filter_by(item=item_, revision=cur_rev).first()
         if act:
             act.draft_status = 1
-            db.session.commit()
             if act.actSelectionType == 'sliding':
                 ac = db.session.query(actuatorCaseData).filter_by(actuator_=act, revision=cur_rev).first()
                 if ac:
                     ac.draft_status = 1
-                    db.session.commit()
-                sc = db.session.query(strokeCase).filter_by(actuatorCase_=ac, revision=cur_rev).first()
+                sc = db.session.query(strokeCase).filter_by(actuatorCase_=ac, revision=cur_rev).first() if ac else None
                 if sc:
                     sc.draft_status = 1
-                    db.session.commit()
             elif act.actSelectionType == 'rotary':
                 rc = db.session.query(rotaryCaseData).filter_by(actuator_=act, revision=cur_rev).first()
                 if rc:
                     rc.draft_status = 1
-                    db.session.commit()
 
         vt = db.session.query(volumeTank).filter_by(actuator_=act, revision=cur_rev).first() if act else None
         if vt:
             vt.draft_status = 1
-            db.session.commit()
 
         acc = db.session.query(accessoriesData).filter_by(item=item_, revision=cur_rev).first()
         if acc:
             acc.draft_status = 1
-            db.session.commit()
 
         for note in db.session.query(itemNotesData).filter_by(item=item_, revision=cur_rev).all():
             note.draft_status = 1
-        db.session.commit()
 
         item_.cur_revType  = 'view'
         item_.draft_status = 1
@@ -745,7 +742,7 @@ def project_submit():
 
     project.revision = last_rev + 1
     db.session.commit()
-    return "success"
+    return jsonify({'status':'success', 'message':'Project Submitted succesfully'})
 
 
 # ---------------------------------------------------------------------------
@@ -878,6 +875,7 @@ def item_delete():
 
 @bp.route('/project-delete', methods=['POST'])
 @login_required
+@error_handler
 def project_delete():
     data       = request.get_json()
     project_id = data['projectId']
@@ -885,7 +883,7 @@ def project_delete():
     creator    = db.session.get(userMaster, project_.createdById)
 
     if current_user.id != project_.createdById:
-        return jsonify({'status': 'error', 'message': f"Only the project creator '{creator.name}' can delete the project"})
+        return jsonify({'status': 'warning', 'message': f"Only the project creator '{creator.name}' can delete the project"}), 400
 
     all_projects = db.session.query(projectMaster).filter_by(user=current_user).all()
 

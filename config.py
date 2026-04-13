@@ -9,7 +9,7 @@ with open(env_file, 'r') as f:
     env_data = json.load(f)
 
 class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY")
+    SECRET_KEY = os.environ.get("SECRET_KEY", env_data['SECRET_KEY'])
     SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", env_data['DATABASE_URL'])
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     MAIL_SERVER = os.environ.get("MAIL_SERVER", env_data['MAIL_SERVER'])

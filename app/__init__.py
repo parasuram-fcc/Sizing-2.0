@@ -52,4 +52,8 @@ def create_app(config_name="default"):
     app.register_blueprint(specsheet_bp)
     app.register_blueprint(pricing_bp)
 
+    @app.route('/')
+    def index():
+        return render_template('index.html')
+
     return app

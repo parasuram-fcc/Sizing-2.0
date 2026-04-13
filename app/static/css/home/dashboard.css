@@ -279,7 +279,7 @@
 }
 
 /* cell padding override for pdl-4 cells (already handled by td rule above) */
-#projectlist td.pdl-4,
+#projectTableBody td.pdl-4,
 #itemsTableBody td.pdl-4 {
     padding-left: 6px !important;
 }

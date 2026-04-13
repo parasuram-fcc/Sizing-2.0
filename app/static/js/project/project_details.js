@@ -118,6 +118,7 @@ $(document).ready(function () {
                 if (data.status === 'success') {
                     sessionStorage.setItem('proj_id', data.project_id);
                     sessionStorage.setItem('item_id', data.item_id);
+                    allowNavigation = true;
                     window.location.href = '/home';
                 } else {
                     showFlash(data.message || 'An unexpected error occurred.', 'error');
