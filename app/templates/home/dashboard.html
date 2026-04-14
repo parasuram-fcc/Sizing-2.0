@@ -296,13 +296,13 @@
                             <p class="text-muted text-center">Select project revision to export</p>
                         </div>
                         <div class="modal-footer">
-                            {# TODO: implement 'exportProject' route (POST /project/export/proj-<proj_id>/item-<item_id>) — exports selected project revision #}
-                            <form id="exportProjForm"
-                                  action="#"
-                                  onclick="exportProj()">
+                            {# Route: GET /project/export-project/proj-<proj_id>/item-<item_id>?export_proj=<rev> — project.export_project #}
+                            <div id="exportProjForm">
+                                  <!-- action="#"
+                                  onclick="exportProj()" -->
                                 <input type="hidden" class="export_rev_proj" name="export_proj" />
-                                <button type="submit">Export</button>
-                            </form>
+                                <button type="button" id="ExpotrProjectBtn">Export</button>
+                            </div>
                         </div>
                     </div>
                 </div>

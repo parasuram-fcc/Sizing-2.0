@@ -2,6 +2,7 @@
 routes.py — Project blueprint routes.
 
 Routes:
+  GET  /project/export-project/proj-<proj_id>/item-<item_id>
   POST /project/import-project/proj-<proj_id>/item-<item_id>
   GET  /project/add-project/
   POST /project/add-project/
@@ -22,10 +23,13 @@ Routes:
 import ast
 import json
 import re
+from collections import defaultdict
 from datetime import datetime
+from io import BytesIO
+import traceback
 
 import pandas as pd
-from flask import flash, jsonify, redirect, render_template, request, session, url_for
+from flask import flash, jsonify, redirect, render_template, request, send_file, session, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import distinct
 from sqlalchemy import inspect as sa_inspect
@@ -34,13 +38,46 @@ from sqlalchemy.orm import load_only, selectinload
 
 from app.blueprints.project import bp
 from app.extensions import db
+from openpyxl import Workbook
+
 from app.models.master import (
     addressMaster,
+    balancing,
+    balanceSeal,
+    bodyFFDimension,
+    bonnet,
+    bonnetType,
+    cageClamp,
     companyMaster,
+    designStandard,
+    disc,
+    endConnection,
+    endFinish,
     engineerMaster,
-    industryMaster,
-    regionMaster,
+    fluidProperties,
     fluidState,
+    flowCharacter,
+    flowDirection,
+    gasket,
+    industryMaster,
+    materialMaster,
+    nde1,
+    nde2,
+    packing,
+    packingFriction,
+    packingTorque,
+    packingType,
+    plug,
+    ratingMaster,
+    regionMaster,
+    seat,
+    seatLeakageClass,
+    seatLoadForce,
+    seal,
+    shaft,
+    studNut,
+    trimType,
+    valveStyle,
 )
 from app.models.transactional import (
     accessoriesData,
@@ -79,6 +116,8 @@ from app.blueprints.project.helpers import (
     add_project_metadata,
     add_project_rels,
     generate_quote,
+    get_db_element_with_id,
+    get_eng_addr_project,
     get_item_for_add_project,
 )
 from app.blueprints.home.helpers import (
@@ -296,16 +335,17 @@ def add_project():
         except IntegrityError as e:
             db.session.rollback()
             if 'unique' in str(e.orig).lower() or 'duplicate' in str(e.orig).lower():
-                return jsonify({'status': 'error', 'error': 'Quote Number already exists!'}), 400
-            return jsonify({'status': 'error', 'error': 'Database error occurred. Please try again.'}), 400
-        except Exception:
+                return jsonify({'status': 'error', 'message': 'Quote Number already exists!', 'error':str(e)}), 400
+            return jsonify({'status': 'error', 'message': 'Database error occurred. Please try again.', 'error':str(e)}), 400
+        except Exception as e:
+            # traceback.print_exc()
             db.session.rollback()
-            return jsonify({'status': 'error', 'error': 'Something went wrong. Please try again.'}), 400
+            return jsonify({'status': 'error', 'message': 'Something went wrong. Please try again.', 'error':str(e)}), 400
         # ── 3. Create first item ──────────────────────────────────────────
         try:
             add_item = _add_new_item(new_project, 1, 'A')
-        except Exception:
-            return jsonify({'status': 'error', 'error': 'Failed to create item. Please try again.'}), 400
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': 'Failed to create item. Please try again.', 'error':str(e)}), 400
         # ── 4. Link company / engineer relationships ──────────────────────
         try:
             project_element = db.session.query(projectMaster).filter_by(quoteNo=proj_id).first()
@@ -320,8 +360,8 @@ def add_project():
                 project   = project_element,
                 operation = 'create',
             )
-        except Exception:
-            return jsonify({'status': 'error', 'error': 'Failed to save project relationships. Please try again.'}), 400
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': 'Failed to save project relationships. Please try again.', 'error':str(e)}), 400
 
         # ── 5. Update session bucket to new project's range ──────────────
         last_project = new_project.quoteNo
@@ -919,6 +959,7 @@ def project_delete():
 
 @bp.route('/import-project/proj-<int:proj_id>/item-<int:item_id>', methods=['POST'])
 @login_required
+@error_handler
 def import_project(item_id, proj_id):
     item = get_by_id(itemMaster, item_id)
 
@@ -1083,8 +1124,7 @@ def import_project(item_id, proj_id):
             db.session.commit()
         except IntegrityError as exc:
             import traceback
-            print('---------------------')
-            traceback.print_exc()
+            # traceback.print_exc()
             db.session.rollback()
             if 'unique' in str(exc.orig).lower() or 'duplicate' in str(exc.orig).lower():
                 flash('Quote Number already exists!', 'failure')
@@ -1386,3 +1426,545 @@ def import_project(item_id, proj_id):
 
         flash('Project imported successfully', 'success')
         return redirect(url_for('home.home', item_id=item_id, proj_id=proj_id))
+
+
+# ---------------------------------------------------------------------------
+# /project/export-project — Export project data as Excel
+# ---------------------------------------------------------------------------
+
+@bp.route('/export-project', methods=['GET'])
+@login_required
+@error_handler
+def export_project():
+    """
+    Export all project data (items, cases, actuators, accessories, notes,
+    customer, warnings, volume-tank) to an Excel workbook and send it as
+    a file download.
+
+    Query params:
+        proj_id     — project ID
+        item_id     — item ID
+        export_proj — project revision number to export up to
+    """
+    proj_id         = request.args.get('proj_id')
+    item_id         = request.args.get('item_id')
+    export_proj_rev = request.args.get('export_proj')
+    project_element = get_db_element_with_id(projectMaster, proj_id)
+
+    proj_rev_list = (
+        db.session.query(projectRevisionTable)
+        .filter(
+            projectRevisionTable.project == project_element,
+            projectRevisionTable.projectRevision <= export_proj_rev,
+            projectRevisionTable.item != None,
+        )
+        .order_by(projectRevisionTable.id)
+        .all()
+    )
+    if not current_user.fccUser:
+        proj_rev_list = db.session.query(itemMaster).filter_by(project=project_element).all()
+
+    project_elements = db.session.query(projectMaster).filter_by(id=proj_id).all()
+    address_c, address_e, eng_a, eng_c = get_eng_addr_project(project_element)
+    heading = [
+        ['Project'], ['Items'], ['CaseDetails'], ['Actuator'], ['Accessories'],
+        ['ItemNotes'], ['FinishExcel'], ['Customer'], ['CaseWarnings'],
+        ['ValveWarnings'], ['VolumeTank'],
+    ]
+
+    # Master-table lookup map for FK fields
+    key_table = {
+        'ratingId':           ratingMaster,
+        'materialId':         materialMaster,
+        'designStandardId':   designStandard,
+        'valveStyleId':       valveStyle,
+        'fluidStateId':       fluidState,
+        'fluidPropertiesId':  fluidProperties,
+        'endConnectionId':    endConnection,
+        'endFinishId':        endFinish,
+        'bodyFFDimenId':      bodyFFDimension,
+        'bonnetTypeId':       bonnetType,
+        'packingTypeId':      packingType,
+        'trimTypeId':         trimType,
+        'flowCharacterId':    flowCharacter,
+        'flowDirectionId':    flowDirection,
+        'plugId':             plug,
+        'seatLeakageClassId': seatLeakageClass,
+        'bonnetId':           bonnet,
+        'nde1Id':             nde1,
+        'nde2Id':             nde2,
+        'shaftId':            shaft,
+        'discId':             disc,
+        'seatId':             seat,
+        'sealId':             seal,
+        'packingId':          packing,
+        'balancingId':        balancing,
+        'balanceSealId':      balanceSeal,
+        'studNutId':          studNut,
+        'gasketId':           gasket,
+        'cageId':             cageClamp,
+        'packingFrictionId':  packingFriction,
+        'packingTorqueId':    packingTorque,
+        'seatLoadId':         seatLoadForce,
+        'fluidId' : fluidProperties
+    }
+
+    # Pre-load all master-table lookups into dicts — eliminates 30×N_items individual DB queries
+    _master_name_cache = {}
+    for _f, _t in key_table.items():
+        if _f == 'fluidId':
+            _master_name_cache[_f] = {r.id: r.fluidName for r in db.session.query(_t).all()}
+        else:
+            _master_name_cache[_f] = {r.id: getattr(r, 'name', None) for r in db.session.query(_t).all()}
+
+    _industry_cache = {r.id: r.name for r in db.session.query(industryMaster).all()}
+    _region_cache   = {r.id: r.name for r in db.session.query(regionMaster).all()}
+
+    def _name_from_master(field, id_):
+        return _master_name_cache.get(field, {}).get(int(id_))
+
+    wb = Workbook()
+    ws = wb.active
+
+    # ---- Project ----
+    ws.append(heading[0])
+    all_keys = projectMaster.__table__.columns.keys()
+    all_keys.remove('createdById')
+    ws.append(all_keys)
+    for data_ in project_elements:
+        single_row_data = []
+        for key_ in all_keys:
+            if key_ == 'createdById':
+                continue
+            abc = getattr(data_, key_, None)
+            if abc:
+                if key_ == 'IndustryId':
+                    single_row_data.append(_industry_cache.get(int(abc), abc))
+                elif key_ == 'regionID':
+                    single_row_data.append(_region_cache.get(int(abc), abc))
+                elif key_ == 'revisionNo':
+                    single_row_data.append(1)
+                elif key_ == 'id':
+                    single_row_data.append(1)
+                else:
+                    single_row_data.append(abc)
+            else:
+                single_row_data.append('N/A')
+        ws.append(single_row_data)
+    ws.append([])
+
+    # ---- Items ----
+    ws.append(heading[1])
+    item_datas  = itemMaster.__table__.columns.keys()
+    valve_datas = valveDetailsMaster.__table__.columns.keys()
+    item_datas.remove('projectID')
+    valve_datas.remove('id')
+    valve_datas.remove('itemId')
+    allkeys_item = item_datas + valve_datas
+    item_id_ctr = 1; case_id = 1; act_id = 1; acc_id = 1
+    itemnotes_id = 1; voltank_id = 1
+    item_details = []; case_details = []; act_details = []; accessories_ = []
+    item_notes = []; customer_details = []; case_warnings = []
+    valve_warnings_ = []; volume_tank_ = []
+
+    valve_map_ = {}
+    vl = 1
+
+    # ---- Column key lists (computed once, not per-item) ----
+    all_keys_valve_warnings = valveDataWarnings.__table__.columns.keys()
+    all_keys_cases          = caseMaster.__table__.columns.keys()
+    if 'itemId' in all_keys_cases:
+        all_keys_cases.remove('itemId')
+        all_keys_cases.insert(1, 'itemId')
+    all_keys_warnings    = caseWarnings.__table__.columns.keys()
+    all_keys_actuator    = actuatorMaster.__table__.columns.keys()
+    if 'itemId' in all_keys_actuator:
+        all_keys_actuator.remove('itemId')
+        all_keys_actuator.insert(1, 'itemId')
+    all_keys_volumetank  = volumeTank.__table__.columns.keys()
+    all_keys_rotaryCase  = rotaryCaseData.__table__.columns.keys()
+    all_keys_slidingCase = actuatorCaseData.__table__.columns.keys()
+    all_keys_accessories = accessoriesData.__table__.columns.keys()
+    if 'itemId' in all_keys_accessories:
+        all_keys_accessories.remove('itemId')
+        all_keys_accessories.insert(1, 'itemId')
+    all_keys_itemNotes = itemNotesData.__table__.columns.keys()
+    if 'itemId' in all_keys_itemNotes:
+        all_keys_itemNotes.remove('itemId')
+        all_keys_itemNotes.insert(1, 'itemId')
+
+    # ---- Batch-load all child records for all items (replaces N queries per section) ----
+    _item_rev_pairs = [
+        (pr.item, pr.itemRevision) if current_user.fccUser else (pr, 0)
+        for pr in proj_rev_list
+    ]
+    _all_item_ids = [pair[0].id for pair in _item_rev_pairs]
+
+    # valves
+    _valve_bulk = (
+        db.session.query(valveDetailsMaster)
+        .filter(valveDetailsMaster.itemId.in_(_all_item_ids))
+        .all()
+    ) if _all_item_ids else []
+    _valve_by_item_rev = {(v.itemId, v.revision): v for v in _valve_bulk}
+
+    # valve warnings
+    _all_valve_ids = [v.id for v in _valve_bulk]
+    _vwarn_bulk = (
+        db.session.query(valveDataWarnings)
+        .filter(valveDataWarnings.valveWarningId.in_(_all_valve_ids))
+        .all()
+    ) if _all_valve_ids else []
+    _vwarn_by_valve = {w.valveWarningId: w for w in _vwarn_bulk}
+
+    # cases
+    _cases_bulk = (
+        db.session.query(caseMaster)
+        .filter(caseMaster.itemId.in_(_all_item_ids))
+        .order_by(caseMaster.id)
+        .all()
+    ) if _all_item_ids else []
+    _cases_by_item_rev = defaultdict(list)
+    for _c in _cases_bulk:
+        _cases_by_item_rev[(_c.itemId, _c.revision)].append(_c)
+
+    # case warnings
+    _all_case_ids = [_c.id for _c in _cases_bulk]
+    _cwarn_bulk = (
+        db.session.query(caseWarnings)
+        .filter(caseWarnings.caseId.in_(_all_case_ids))
+        .all()
+    ) if _all_case_ids else []
+    _cwarn_by_case = defaultdict(list)
+    for _w in _cwarn_bulk:
+        _cwarn_by_case[_w.caseId].append(_w)
+
+    # actuators
+    _act_bulk = (
+        db.session.query(actuatorMaster)
+        .filter(actuatorMaster.itemId.in_(_all_item_ids))
+        .all()
+    ) if _all_item_ids else []
+    _act_by_item_rev = defaultdict(list)
+    for _a in _act_bulk:
+        _act_by_item_rev[(_a.itemId, _a.revision)].append(_a)
+
+    _all_act_ids = [_a.id for _a in _act_bulk]
+
+    # volume tanks
+    _vtank_bulk = (
+        db.session.query(volumeTank)
+        .filter(volumeTank.actuatorMasterId.in_(_all_act_ids))
+        .all()
+    ) if _all_act_ids else []
+    _vtank_by_act_rev = {(v.actuatorMasterId, v.revision): v for v in _vtank_bulk}
+
+    # rotary case data
+    _rotary_bulk = (
+        db.session.query(rotaryCaseData)
+        .filter(rotaryCaseData.actuatorMasterId.in_(_all_act_ids))
+        .all()
+    ) if _all_act_ids else []
+    _rotary_by_act_rev = {(r.actuatorMasterId, r.revision): r for r in _rotary_bulk}
+
+    # sliding (actuator case) data
+    _sliding_bulk = (
+        db.session.query(actuatorCaseData)
+        .filter(actuatorCaseData.actuatorMasterId.in_(_all_act_ids))
+        .all()
+    ) if _all_act_ids else []
+    _sliding_by_act_rev = {(s.actuatorMasterId, s.revision): s for s in _sliding_bulk}
+
+    # accessories
+    _acc_bulk = (
+        db.session.query(accessoriesData)
+        .filter(accessoriesData.itemId.in_(_all_item_ids))
+        .all()
+    ) if _all_item_ids else []
+    _acc_by_item_rev = defaultdict(list)
+    for _a in _acc_bulk:
+        _acc_by_item_rev[(_a.itemId, _a.revision)].append(_a)
+
+    # item notes
+    _notes_bulk = (
+        db.session.query(itemNotesData)
+        .filter(itemNotesData.itemId.in_(_all_item_ids))
+        .all()
+    ) if _all_item_ids else []
+    _notes_by_item_rev = defaultdict(list)
+    for _n in _notes_bulk:
+        _notes_by_item_rev[(_n.itemId, _n.revision)].append(_n)
+    for proj_rev in proj_rev_list:
+        if current_user.fccUser:
+            data_              = proj_rev.item
+            export_proj_revision = proj_rev.itemRevision
+        else:
+            data_              = proj_rev
+            export_proj_revision = 0
+
+        # item row
+        single_row_data = []
+        for key_ in item_datas:
+            abc = getattr(data_, key_)
+            single_row_data.append(item_id_ctr if key_ == 'id' else abc)
+
+        # valve row
+        valve_item = _valve_by_item_rev.get((data_.id, export_proj_revision))
+        single_row_data_valve = []
+        v_warnings = _vwarn_by_valve.get(valve_item.id) if valve_item else None
+        single_row_valve_warnings = []
+
+        for key_ in valve_datas:
+            abc = getattr(valve_item, key_)
+            if abc:
+                if key_ in key_table:
+                    single_row_data_valve.append(_name_from_master(key_, abc))
+                else:
+                    single_row_data_valve.append(abc)
+            else:
+                single_row_data_valve.append('N/A')
+        item_details.append(single_row_data + single_row_data_valve)
+        valve_map_[valve_item] = vl
+        vl += 1
+
+        if v_warnings:
+            for keys in all_keys_valve_warnings:
+                abc_ = getattr(v_warnings, keys)
+                if abc_:
+                    if keys == 'valveWarningId':
+                        single_row_valve_warnings.append(valve_map_[valve_item])
+                    else:
+                        single_row_valve_warnings.append(abc_)
+            valve_warnings_.append(single_row_valve_warnings)
+
+        # ---- Cases ----
+        cases_ = _cases_by_item_rev.get((data_.id, export_proj_revision), [])
+        single_row_data_warnings = []
+        for case_ in cases_:
+            case_warns = _cwarn_by_case.get(case_.id, [])
+            if case_warns:
+                c_id = 1
+                for warn_ in case_warns:
+                    case__ = []
+                    for key_ in all_keys_warnings:
+                        abc = getattr(warn_, key_)
+                        if abc:
+                            if key_ == 'id':
+                                case__.append(c_id)
+                            elif key_ == 'caseId':
+                                case__.append(case_id)
+                            else:
+                                case__.append(abc)
+                        else:
+                            case__.append('N/A')
+                    single_row_data_warnings.append(case__)
+                    c_id += 1
+
+            single_row_data_case = []
+            for key_ in all_keys_cases:
+                abc = getattr(case_, key_)
+                if abc:
+                    if key_ == 'id':
+                        single_row_data_case.append(case_id)
+                    elif key_ == 'cv_lists':
+                        single_row_data_case.append(', '.join(str(v) for v in abc))
+                    elif key_ == 'itemId':
+                        single_row_data_case.append(item_id_ctr)
+                    elif key_ not in ['valveDiaId', 'fluidId']:
+                        single_row_data_case.append(abc)
+                else:
+                    single_row_data_case.append('N/A')
+            case_details.append(single_row_data_case)
+            case_id += 1
+        case_warnings.append(single_row_data_warnings)
+
+        # ---- Actuators ----
+        actuator_mas = _act_by_item_rev.get((data_.id, export_proj_revision), [])
+        for act_ in actuator_mas:
+            vol_tank_data = _vtank_by_act_rev.get((act_.id, export_proj_revision))
+            if vol_tank_data:
+                single_row_data_voltank = []
+                for key_ in all_keys_volumetank:
+                    abc = getattr(vol_tank_data, key_)
+                    if abc:
+                        if key_ == 'id':
+                            single_row_data_voltank.append(voltank_id)
+                        elif key_ == 'actuatorMasterId':
+                            single_row_data_voltank.append(act_id)
+                        elif key_ == 'end_of_strokes':
+                            single_row_data_voltank.append(str(abc))
+                        else:
+                            single_row_data_voltank.append(abc)
+                    else:
+                        single_row_data_voltank.append('N/A')
+                voltank_id += 1
+                volume_tank_.append(single_row_data_voltank)
+
+            single_row_data_act = []
+            for key_ in all_keys_actuator:
+                abc = getattr(act_, key_)
+                if abc:
+                    if key_ == 'id':
+                        single_row_data_act.append(act_id)
+                    elif key_ == 'itemId':
+                        single_row_data_act.append(item_id_ctr)
+                    elif key_ not in ['valveDiaId', 'fluidId']:
+                        single_row_data_act.append(abc)
+                else:
+                    single_row_data_act.append('N/A')
+
+            if act_.actuatorType in ['SY', 'SYC', 'SYCDA']:
+                actuator_case = _rotary_by_act_rev.get((act_.id, export_proj_revision))
+                if actuator_case:
+                    for _ in all_keys_slidingCase:
+                        single_row_data_act.append('N/A')
+                    for key_ in all_keys_rotaryCase:
+                        abc = getattr(actuator_case, key_)
+                        if abc:
+                            if key_ in key_table:
+                                single_row_data_act.append(_name_from_master(key_, abc))
+                            else:
+                                single_row_data_act.append(abc)
+                        else:
+                            single_row_data_act.append('N/A')
+            else:
+                actuator_case = _sliding_by_act_rev.get((act_.id, export_proj_revision))
+                if actuator_case:
+                    for key_ in all_keys_slidingCase:
+                        abc = getattr(actuator_case, key_)
+                        if abc:
+                            if key_ in key_table:
+                                single_row_data_act.append(_name_from_master(key_, abc))
+                            else:
+                                single_row_data_act.append(abc)
+                        else:
+                            single_row_data_act.append('N/A')
+                    for _ in all_keys_rotaryCase:
+                        single_row_data_act.append('N/A')
+
+            act_details.append(single_row_data_act)
+            act_id += 1
+
+        # ---- Accessories ----
+        for acc_ in _acc_by_item_rev.get((data_.id, export_proj_revision), []):
+            single_row_data_accessories = []
+            for key_ in all_keys_accessories:
+                abc = getattr(acc_, key_)
+                if abc:
+                    if key_ == 'id':
+                        single_row_data_accessories.append(acc_id)
+                    elif key_ == 'itemId':
+                        single_row_data_accessories.append(item_id_ctr)
+                    else:
+                        single_row_data_accessories.append(abc)
+                else:
+                    single_row_data_accessories.append('N/A')
+            accessories_.append(single_row_data_accessories)
+            acc_id += 1
+
+        # ---- Item Notes ----
+        for notes_ in _notes_by_item_rev.get((data_.id, export_proj_revision), []):
+            single_row_data_itemnotes = []
+            for key_ in all_keys_itemNotes:
+                abc = getattr(notes_, key_)
+                if abc:
+                    if key_ == 'id':
+                        single_row_data_itemnotes.append(itemnotes_id)
+                    elif key_ == 'itemId':
+                        single_row_data_itemnotes.append(item_id_ctr)
+                    else:
+                        single_row_data_itemnotes.append(abc)
+                else:
+                    single_row_data_itemnotes.append('N/A')
+            item_notes.append(single_row_data_itemnotes)
+            itemnotes_id += 1
+
+        item_id_ctr += 1
+
+    # ---- Customer ----
+    customer_key_datas = ['Companyname', 'Companyaddress', 'Enduser', 'EnduserAdd', 'AppEngg', 'ContactEngg']
+    customer_values = []
+    for key_ in customer_key_datas:
+        if key_ == 'Companyname':
+            customer_values.append(address_c.address.company.name)
+        elif key_ == 'Companyaddress':
+            customer_values.append(address_c.address.address)
+        elif key_ == 'Enduser':
+            customer_values.append(address_e.address.company.name)
+        elif key_ == 'EnduserAdd':
+            customer_values.append(address_e.address.address)
+        elif key_ == 'AppEngg':
+            customer_values.append(eng_a.engineer.name)
+        elif key_ == 'ContactEngg':
+            customer_values.append(eng_c.engineer.name)
+    customer_details.append(customer_values)
+
+    # ---- Write all sections ----
+    item_details.insert(0, allkeys_item)
+    for row in item_details:
+        ws.append(row)
+
+    ws.append([])
+    ws.append(heading[2])
+    case_details.insert(0, all_keys_cases)
+    for row in case_details:
+        ws.append(row)
+
+    ws.append([])
+    ws.append(heading[3])
+    all_keys_actdatas = all_keys_actuator + all_keys_slidingCase + all_keys_rotaryCase
+    act_details.insert(0, all_keys_actdatas)
+    for row in act_details:
+        ws.append(row)
+
+    ws.append([])
+    ws.append(heading[4])
+    accessories_.insert(0, all_keys_accessories)
+    for row in accessories_:
+        ws.append(row)
+
+    ws.append([])
+    ws.append(heading[10])
+    volume_tank_.insert(0, all_keys_volumetank)
+    for row in volume_tank_:
+        ws.append(row)
+
+    ws.append([])
+    ws.append(heading[5])
+    item_notes.insert(0, all_keys_itemNotes)
+    for row in item_notes:
+        ws.append(row)
+
+    ws.append([])
+    ws.append(heading[7])
+    customer_details.insert(0, customer_key_datas)
+    for row in customer_details:
+        ws.append(row)
+
+    ws.append([])
+    ws.append(heading[8])
+    case_warnings.insert(0, all_keys_warnings)
+    az = 0
+    for cas_ in case_warnings:
+        if az == 0:
+            ws.append(cas_)
+            az = 1
+        else:
+            for wr_ in cas_:
+                ws.append(wr_)
+
+    ws.append([])
+    ws.append(heading[9])
+    valve_warnings_.insert(0, all_keys_valve_warnings)
+    for row in valve_warnings_:
+        ws.append(row)
+
+    ws.append([])
+    ws.append(heading[6])
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True,
+                     download_name=f"{projectMaster.__tablename__}.xlsx",
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

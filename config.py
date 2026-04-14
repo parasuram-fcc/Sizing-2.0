@@ -13,7 +13,7 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", env_data['DATABASE_URL'])
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     MAIL_SERVER = os.environ.get("MAIL_SERVER", env_data['MAIL_SERVER'])
-    MAIL_PORT = os.environ.get("MAIL_PORT", env_data['MAIL_PORT'])
+    MAIL_PORT = int(os.environ.get("MAIL_PORT", env_data['MAIL_PORT']))
     MAIL_USE_TLS = True
     MAIL_USERNAME = os.environ.get("MAIL_USERNAME", env_data['MAIL_USERNAME'])
     MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD", env_data['MAIL_PASSWORD'])

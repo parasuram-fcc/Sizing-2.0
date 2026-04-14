@@ -1017,9 +1017,58 @@ $(document).on('show.bs.modal', '#copyItemModal', function () {
 
 /* =================== IMPORT / EXPORT =================== */
 
-function exportProj() {
-    $('.export_rev_proj').val($('.projrev:checked').data('id'));
-}
+/* ExpotrProjectBtn click — send selected revision as query param to REST export endpoint */
+$('#ExpotrProjectBtn').on('click', function () {
+    const selectedRev = $('.projrev:checked').val();
+    if (selectedRev === undefined) {
+        showFlash('Please select a revision to export', 'warning');
+        return;
+    }
+
+    const { projectId, itemId } = getCurrentIds();
+    if (!projectId || !itemId) {
+        showFlash('No project selected', 'warning');
+        return;
+    }
+
+    $.ajax({
+        type: 'GET',
+        url: `/project/export-project?proj_id=${projectId}&item_id=${itemId}&export_proj=${selectedRev}`,
+        xhrFields: { responseType: 'blob' },
+        success: function (blob, _status, xhr) {
+            const url = window.URL.createObjectURL(blob);
+            const a   = document.createElement('a');
+            a.href    = url;
+
+            /* Try to get filename from Content-Disposition header */
+            const disposition = xhr.getResponseHeader('Content-Disposition');
+            let filename = 'export.xlsx';
+            if (disposition) {
+                const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                if (match) filename = match[1].replace(/['"]/g, '');
+            }
+
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+            $('#exportProjModal').modal('hide');
+        },
+        error: function (xhr) {
+            const reader = new FileReader();
+            reader.onload = function () {
+                try {
+                    const resp = JSON.parse(reader.result);
+                    showFlash(resp.message || 'Export failed', 'error');
+                } catch (_) {
+                    showFlash('Export failed', 'error');
+                }
+            };
+            reader.readAsText(xhr.responseText instanceof Blob ? xhr.responseText : new Blob([xhr.responseText]));
+        }
+    });
+});
 
 function copyItem() {
     const selectedRadio = $('.copyrev:checked');
@@ -1048,8 +1097,8 @@ document.addEventListener("change", function (e) {
     const selectedRev = e.target.value;
     document.querySelector(".export_rev_proj").value = selectedRev;
 
-    const { projectId, itemId } = getCurrentIds();
-    document.getElementById("exportProjForm").action = `/export-project/proj-${projectId}/item-${itemId}`;
+//     const { projectId, itemId } = getCurrentIds();
+//     document.getElementById("exportProjForm").action = `/export-project/proj-${projectId}/item-${itemId}`;
 });
 
 /* Export project modal — load revisions dynamically */

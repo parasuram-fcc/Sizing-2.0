@@ -4,7 +4,7 @@ from sqlalchemy import Column, Integer, ForeignKey, String, Boolean, DateTime, F
 from sqlalchemy.orm import relationship, backref
 from app.extensions import db
 from sqlalchemy import Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import ARRAY
+# from sqlalchemy.dialects.postgresql import ARRAY  # not used in master models
 from datetime import datetime, timedelta
 
 

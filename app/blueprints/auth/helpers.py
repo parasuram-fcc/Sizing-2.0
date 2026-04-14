@@ -6,11 +6,14 @@ Extracted from routes.py to keep route functions thin.
 No business logic has been changed.
 """
 import random
+import logging
 from datetime import datetime
 
 from flask_mail import Message
 
 from app.extensions import db, mail
+
+log = logging.getLogger(__name__)
 from app.models import (
     OTP, engineerMaster, projectMaster, itemMaster,
     valveDetailsMaster, actuatorMaster, accessoriesData,
@@ -38,9 +41,10 @@ def send_otp(username):
         message = Message('Your otp', recipients=[username])
         message.body = f"FCC Sizing Software for Create Password is {random_int}"
         mail.send(message)
-        return True
-    except Exception:
-        return False
+        return True, 'OTP sent'
+    except Exception as e:
+        log.error("send_otp failed for %s: %s", username, e, exc_info=True)
+        return False, str(e)
 
 
 def add_user_as_engineer(name, designation):

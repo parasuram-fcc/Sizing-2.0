@@ -129,7 +129,7 @@ $(document).ready(function () {
                 var msg = 'An unexpected error occurred.';
                 try {
                     var resp = JSON.parse(xhr.responseText);
-                    if (resp.error) { msg = resp.error; }
+                    if (resp.error) { msg = resp.message; }
                 } catch (_) {}
                 showFlash(msg, 'error');
                 $btn.prop('disabled', false);
