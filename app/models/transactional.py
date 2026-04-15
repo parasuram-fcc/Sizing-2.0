@@ -1,11 +1,33 @@
+import json
 from flask_login import UserMixin
 from sqlalchemy import Column, Integer, ForeignKey, String, Boolean, DateTime, Float, or_, \
     BigInteger
 from sqlalchemy.orm import relationship, backref
 from app.extensions import db
 from sqlalchemy import Text, UniqueConstraint
+from sqlalchemy.types import TypeDecorator
 from sqlalchemy.dialects.postgresql import ARRAY
 from datetime import datetime, timedelta
+
+# for desktop version
+class JSONList(TypeDecorator):
+    """Stores a Python list as a JSON string.
+    Replaces PostgreSQL ARRAY — works with both SQLite and PostgreSQL."""
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None:
+            return json.dumps(value)
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            try:
+                return json.loads(value)
+            except (ValueError, TypeError):
+                return value
+        return value
 
 
 # =============================================================================
@@ -960,7 +982,8 @@ class caseMaster(db.Model):
     revision = Column(Integer)
     draft_status = Column(Integer)
     flowrateType = Column(String(30))
-    cv_lists = db.Column(ARRAY(db.Float), nullable=True)
+    cv_lists = db.Column(ARRAY(db.Float), nullable=True)  # PostgreSQL only
+    # cv_lists = db.Column(JSONList, nullable=True)
 
     # rel as child
     inletPipeSchId = Column(Integer, ForeignKey("pipeArea.id"))
@@ -1286,7 +1309,8 @@ class volumeTank(db.Model):
     no_of_strokes = Column(Integer)
     revision = Column(Integer)
 
-    end_of_strokes = db.Column(ARRAY(db.Float), nullable=True)
+    end_of_strokes = db.Column(ARRAY(db.Float), nullable=True)  # PostgreSQL only
+    # end_of_strokes = db.Column(JSONList, nullable=True)
     warning=Column(Text,nullable=True)
 
     actuatorMasterId = Column(Integer, ForeignKey('actuatorMaster.id'))
@@ -1535,7 +1559,8 @@ class pricingAutomation(db.Model):
     valve_factor = Column(Float)
     actuator_factor = Column(Float)
     accessories_factor = Column(Float)
-    tests=Column(ARRAY(String(50)))
+    tests=Column(ARRAY(String(50)))  # PostgreSQL only
+    # tests=Column(JSONList)
     revision = Column(Integer)
 
     itemId = Column(Integer, ForeignKey("itemMaster.id"))

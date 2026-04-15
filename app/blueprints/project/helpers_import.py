@@ -350,6 +350,7 @@ def testcase_module(item_id, proj_id, quote_no: str) -> None:
             status='In progress',
             prepared_by=current_user.code,
             time=datetime.today().strftime('%Y-%m-%d %H:%M'),
+            # time=datetime.today(),  # desktop: SQLite requires datetime object, not string
         ))
         db.session.commit()
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy.orm import load_only
+from sqlalchemy.orm import load_only, joinedload
 from flask_login import current_user
 
 from app.extensions import db
@@ -30,6 +30,31 @@ from app.models.transactional import (
     addressProject,
     engineerProject,
 )
+
+
+# ---------------------------------------------------------------------------
+# Generic DB lookup helpers
+# ---------------------------------------------------------------------------
+
+def get_db_element_with_id(table, id_):
+    """Return the first row of *table* matching the given id, or None."""
+    if id_:
+        return db.session.query(table).filter_by(id=id_).first()
+    return None
+
+
+def get_eng_addr_project(project):
+    """
+    Return (address_c, address_e, eng_a, eng_c) for the given project.
+
+    address_c / address_e — addressProject rows (company / end-user)
+    eng_a     / eng_c     — engineerProject rows (application / contact)
+    """
+    address_c = db.session.query(addressProject).filter_by(project=project, isCompany=True).first()
+    address_e = db.session.query(addressProject).filter_by(project=project, isCompany=False).first()
+    eng_a     = db.session.query(engineerProject).filter_by(project=project, isApplication=True).first()
+    eng_c     = db.session.query(engineerProject).filter_by(project=project, isApplication=False).first()
+    return address_c, address_e, eng_a, eng_c
 
 
 # ---------------------------------------------------------------------------

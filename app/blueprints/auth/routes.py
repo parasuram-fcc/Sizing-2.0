@@ -291,11 +291,12 @@ def resetPassword():
     if request.method == 'POST':
         email_ = request.form.get('email')
         if userMaster.query.filter_by(email=email_).first():
-            if send_otp(email_):
+            otp_sent, otp_msg = send_otp(email_)
+            if otp_sent:
                 session['reset-email'] = email_
                 return redirect(url_for('auth.sendOTPEmail'))
             else:
-                flash('Something went wrong', 'failure')
+                flash(f'Something went wrong: {otp_msg}', 'failure')
                 return redirect(url_for('auth.resetPassword'))
         else:
             flash('Email is not recognized', 'failure')
@@ -314,9 +315,9 @@ def sendOTPAjax():
     emailID = request.args.get('emailID', '').strip()
     if userMaster.query.filter_by(email=emailID).first():
         return jsonify({'message': 'User already exist'})
-    if send_otp(emailID):
-        return jsonify({'message': 'OTP Sent'})
-    return jsonify({'message': 'Something Went Wrong'})
+    otp_sent, message = send_otp(emailID)
+    
+    return jsonify({'status':'success' if otp_sent else 'error', 'message': message})
 
 
 # ---------------------------------------------------------------------------

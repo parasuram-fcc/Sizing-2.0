@@ -192,6 +192,7 @@ function loadProjects(quoteRange) {
             if (requestId !== projectLoadRequestId) return;   // stale response
             const { projectId } = getCurrentIds();
             updateProjectsList(data.projects, projectId);
+            resetItemTable();
         })
         .catch(err => {
             console.error("Project load error:", err);
@@ -455,14 +456,6 @@ document.addEventListener("DOMContentLoaded", function () {
         loadProjects();
     }
 
-    // const bucketSelect = document.getElementById('bucketSelect');
-    // if (bucketSelect) {
-    //     bucketSelect.addEventListener('change', function () {
-    //         allowNavigation = true;
-    //         loadProjects(this.value);
-    //     });
-    // }
-
     if (isRandom === 'yes') {
         resetItemTable();
         return;
@@ -566,7 +559,6 @@ function updateItemsList(items) {
         tbody.insertAdjacentHTML("beforeend", row);
     });
 
-    // attachItemRowHandlers();
 }
 
 function resetItemTable() {
@@ -576,14 +568,6 @@ function resetItemTable() {
                 Select Project to display items
             </td>
         </tr>`;
-}
-
-function attachItemRowHandlers() {
-    document.querySelectorAll(".item-row").forEach(row => {
-        row.addEventListener("click", function () {
-            selectItemRow(this.dataset.itemid);
-        });
-    });
 }
 
 function selectItemRow(itemId) {
@@ -596,14 +580,7 @@ function selectItemRow(itemId) {
     });
 }
 
-function updateAddItemUrl(projId, itemId) {
-    const btn = document.getElementById("itemAddIcon");
-    if (!btn) return;
-    btn.href = `/add-item/proj-${projId}/item-${itemId}`;
-}
-
 $('#itemsTableBody').on('click', function(e){
-    console.log("---new--")
     const row = e.target.closest('.item-row');
     if (!row){
         return;
@@ -615,10 +592,37 @@ $('#itemsTableBody').on('click', function(e){
     selectItemRow(itemId);
 });
 
-/* Item Add icon click — set href before navigation */
-$('#itemAddIcon').on('click', function () {
-    const { projectId, itemId } = getCurrentIds();
-    updateAddItemUrl(projectId, itemId);
+/* Item Add icon click — POST to add-item REST API */
+$('#itemAddIcon').on('click', function (e) {
+    e.preventDefault();
+    const { projectId } = getCurrentIds();
+    if (!projectId) {
+        Swal.fire({ title: "Select a project first", confirmButtonText: "Ok" });
+        return;
+    }
+    $.ajax({
+        type: 'POST',
+        url: '/project/add-item',
+        contentType: 'application/json',
+        data: JSON.stringify({ project_id: projectId }),
+        success: function (response) {
+            showFlash(response.message, 'success');
+            document.getElementById("itemsTableBody").innerHTML = table_loader;
+            getItemsByProject(projectId, items => {
+                updateItemsList(items);
+                if (response.item_id) selectItemRow(response.item_id);
+            });
+        },
+        error: function (xhr) {
+            const resp = JSON.parse(xhr.responseText);
+            showFlash(resp.message, 'error');
+        }
+    });
+});
+
+/* Item Delete icon click — trigger itemDelete */
+$('#itemDeleteBtn').on('click', function () {
+    itemDelete();
 });
 
 // add event listener for delete.
@@ -634,7 +638,8 @@ function itemDelete(_itemid) { // check for
         title: "Do you want to delete the item?",
         showDenyButton: true,
         confirmButtonText: "Delete",
-        denyButtonText: "Cancel"
+        denyButtonText: "Cancel",
+        customClass: { container: 'swal-custom' }
     }).then(result => {
         if (!result.isConfirmed) return;
 
@@ -643,6 +648,7 @@ function itemDelete(_itemid) { // check for
             input: 'text',
             inputLabel: 'Enter valid reason',
             showCancelButton: true,
+            customClass: { container: 'swal-custom' },
             inputValidator: value => { if (!value) return 'You need to write something!'; }
         }).then(result => {
             if (!result.isConfirmed) return;
@@ -650,14 +656,21 @@ function itemDelete(_itemid) { // check for
             $.ajax({
                 type: 'POST',
                 url: '/project/item-delete',
-                data: { item_id: itemId, reasonfordelete: result.value },
+                contentType: 'application/json',
+                data: JSON.stringify({ item_id: itemId, reasonfordelete: result.value }),
                 success: function (response) {
-                    Swal.fire('Deleted!', response.message, 'success');
+                    showFlash(response.message, 'success');
                     sessionStorage.removeItem('item_id');
-                    window.location.href = '/home';
+                    const { projectId } = getCurrentIds();
+                    document.getElementById("itemsTableBody").innerHTML = table_loader;
+                    getItemsByProject(projectId, items => {
+                        updateItemsList(items);
+                        if (response.item_id) selectItemRow(response.item_id);
+                    });
                 },
-                error: function () {
-                    Swal.fire('Error!', 'An error occurred while deleting the item', 'error');
+                error: function (xhr) {
+                    const resp = JSON.parse(xhr.responseText);
+                    showFlash(resp.message, 'error');
                 }
             });
         });
@@ -671,10 +684,6 @@ window.addEventListener("popstate", function (event) {
     const { projId, itemId } = event.state;
     getItemsByProject(projId, items => {
         updateItemsList(items);
-        // setTimeout(() => {
-        //     const row = document.querySelector(`.item-row[data-itemid="${itemId}"]`);
-        //     if (row) row.click();
-        // }, 50);
     });
 });
 
@@ -1070,24 +1079,43 @@ $('#ExpotrProjectBtn').on('click', function () {
     });
 });
 
-function copyItem() {
+/* Copy item button click — POST to copy-item REST API */
+$('#copyItemBtn').on('click', function () {
     const selectedRadio = $('.copyrev:checked');
-    if (selectedRadio.length) {
-        $('.copy_rev_item').val(selectedRadio.data('id'));
+    if (!selectedRadio.length) {
+        showFlash('Please select a revision to copy', 'warning');
+        return;
     }
-}
-
-/* copyrev radio change — update copy form action */
-document.addEventListener("change", function (e) {
-    if (!e.target.classList.contains("copyrev")) return;
-
-    const selectedRev = e.target.value;
-    document.querySelector(".copy_rev_item").value = selectedRev;
 
     const { projectId, itemId } = getCurrentIds();
-    if (!projectId || !itemId) { console.error("Project or Item ID not found in sessionStorage"); return; }
+    if (!projectId || !itemId) {
+        showFlash('Select a project and item first', 'warning');
+        return;
+    }
 
-    document.getElementById("copyItemForm").action = `/copyItem/proj-${projectId}/item-${itemId}`;
+    $.ajax({
+        type: 'POST',
+        url: '/project/copy-item',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            project_id: projectId,
+            item_id: itemId,
+            copy_rev: selectedRadio.data('id')
+        }),
+        success: function (response) {
+            $('#copyItemModal').modal('hide');
+            showFlash(response.message, 'success');
+            document.getElementById("itemsTableBody").innerHTML = table_loader;
+            getItemsByProject(projectId, items => {
+                updateItemsList(items);
+                if (response.item_id) selectItemRow(response.item_id);
+            });
+        },
+        error: function (xhr) {
+            const resp = JSON.parse(xhr.responseText);
+            showFlash(resp.message, 'error');
+        }
+    });
 });
 
 /* projrev radio change — update export form action */
@@ -1096,9 +1124,6 @@ document.addEventListener("change", function (e) {
 
     const selectedRev = e.target.value;
     document.querySelector(".export_rev_proj").value = selectedRev;
-
-//     const { projectId, itemId } = getCurrentIds();
-//     document.getElementById("exportProjForm").action = `/export-project/proj-${projectId}/item-${itemId}`;
 });
 
 /* Export project modal — load revisions dynamically */
@@ -1187,10 +1212,10 @@ document.addEventListener('DOMContentLoaded', () => {
         { element: "#projectAddBtn",  intro: "Click here to create a new project." },
         { element: "#exportProjIcon", intro: "Export the selected project." },
         { element: "#importProjIcon", intro: "Import an exported project." },
-        { element: "#projectinput",   intro: "Search for projects by quote, customer, or enquiry reference.", position: "bottom" },
+        { element: "#search_input",    intro: "Search for projects by quote, customer, or enquiry reference.", position: "bottom" },
         { element: "#itemAddIcon",    intro: "Click here to create a new item." },
         { element: "#copyItemIcon",   intro: "Click here to duplicate the selected item." },
-        { element: "#iteminput",      intro: "Search for items within the selected project.", position: "bottom" },
+        { element: "#search_input_item", intro: "Search for items within the selected project.", position: "bottom" },
         { element: "#projectDetails", intro: "Enter the project & customer details in this section.", position: "right" },
         { element: "#valveData",      intro: "Enter the valve specification in this section.", position: "right" },
         { element: "#valveSizing",    intro: "Perform valve sizing and select the appropriate valve here.", position: "right" },

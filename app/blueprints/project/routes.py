@@ -11,6 +11,8 @@ Routes:
   POST /project/project-delete
   POST /project/project-submit
   POST /project/check-project-draftst
+  GET  /project/add-item/proj-<proj_id>/item-<item_id>
+  GET  /project/copy-item/proj-<proj_id>/item-<item_id>
   POST /project/item-delete
   GET  /project/get_items_only/proj-<proj_id>
   GET  /project/get_project_revisions/<proj_id>
@@ -177,6 +179,7 @@ def _add_new_item(project, item_number, alternate):
         item=new_item, itemRevisionNo=0, status="In progress",
         prepared_by=current_user.code,
         time=datetime.today().strftime("%Y-%m-%d %H:%M"),
+        # time=datetime.today(),  # desktop: SQLite requires datetime object, not string
     )
     db.session.add(item_rev)
     try:
@@ -574,6 +577,7 @@ def change_revision_status():
         item=item_element, itemRevisionNo=updated_revision,
         status="In progress", prepared_by=current_user.code,
         time=datetime.today().strftime("%Y-%m-%d %H:%M"),
+        # time=datetime.today(),  # desktop: SQLite requires datetime object, not string
     )
     db.session.add(item_rev)
     db.session.commit()
@@ -849,25 +853,224 @@ def delete_draft():
 
 
 # ---------------------------------------------------------------------------
+# Private helper — deep-copy an item to a new item number
+# ---------------------------------------------------------------------------
+
+def _copy_item(project, item_number, old_item, revision_no):
+    """Deep-copy old_item at revision_no into a new item on project."""
+    try:
+        revision_no = int(revision_no)
+    except (TypeError, ValueError):
+        revision_no = 0
+
+    def _copy_cols(src, dst, skip=None):
+        skip = skip or set()
+        for col in sa_inspect(type(src)).columns.keys():
+            if col not in skip:
+                setattr(dst, col, getattr(src, col))
+
+    # 1 — new item
+    new_item = itemMaster(
+        project=project,
+        revision=0, draft_status=-1, initial_status=1,
+        cur_revType='initial', cur_status='In progress',
+        itemNumber=item_number, cur_revno=0,
+    )
+    db.session.add(new_item)
+    db.session.flush()
+    _copy_cols(old_item, new_item,
+               skip={'id', 'projectID', 'revision', 'draft_status', 'initial_status',
+                     'cur_revType', 'cur_revno', 'itemNumber', 'cur_status'})
+    new_item.project = project
+    db.session.flush()
+
+    # 2 — valve
+    old_valve = valveDetailsMaster.getValveElement(old_item, revision_no)
+    if old_valve is None:
+        old_valve = valveDetailsMaster.getValveElement(old_item, 0)
+    new_valve = valveDetailsMaster(item=new_item, revision=0, draft_status=-1, cases_length=5)
+    db.session.add(new_valve)
+    db.session.flush()
+    if old_valve:
+        _copy_cols(old_valve, new_valve,
+                   skip={'id', 'itemId', 'revision', 'draft_status'})
+        new_valve.item = new_item
+        new_valve.revision = 0
+        new_valve.draft_status = -1
+
+    # 3 — valve warnings
+    if old_valve:
+        for old_w in db.session.query(valveDataWarnings).filter_by(valve_warning=old_valve).all():
+            new_w = valveDataWarnings(valve_warning=new_valve)
+            db.session.add(new_w)
+            db.session.flush()
+            _copy_cols(old_w, new_w, skip={'id', 'valveWarningId'})
+
+    # 4 — cases + warnings
+    for old_case in (db.session.query(caseMaster)
+                     .filter_by(item=old_item, revision=revision_no)
+                     .order_by(caseMaster.id).all()):
+        new_case = caseMaster(item=new_item, revision=0, draft_status=-1)
+        db.session.add(new_case)
+        db.session.flush()
+        _copy_cols(old_case, new_case, skip={'id', 'itemId', 'revision', 'draft_status'})
+        new_case.item = new_item
+        for old_cw in db.session.query(caseWarnings).filter_by(case=old_case).all():
+            new_cw = caseWarnings(case=new_case)
+            db.session.add(new_cw)
+            db.session.flush()
+            _copy_cols(old_cw, new_cw, skip={'id', 'caseId'})
+
+    # 5 — actuator
+    old_act = (db.session.query(actuatorMaster)
+               .filter_by(item=old_item, revision=revision_no).first()
+               or db.session.query(actuatorMaster).filter_by(item=old_item).first())
+    new_act = actuatorMaster(item=new_item, revision=0, draft_status=-1)
+    db.session.add(new_act)
+    db.session.flush()
+    if old_act:
+        _copy_cols(old_act, new_act, skip={'id', 'itemId', 'revision', 'draft_status'})
+        new_act.item = new_item
+        new_act.revision = 0
+        new_act.draft_status = -1
+
+        old_vt = db.session.query(volumeTank).filter_by(actuator_=old_act).first()
+        if old_vt:
+            new_vt = volumeTank(actuator_=new_act)
+            db.session.add(new_vt)
+            db.session.flush()
+            _copy_cols(old_vt, new_vt, skip={'id', 'actuatorId'})
+
+        if old_act.actSelectionType == 'rotary':
+            old_rc = db.session.query(rotaryCaseData).filter_by(actuator_=old_act, revision=revision_no).first()
+            new_rc = rotaryCaseData(actuator_=new_act, revision=0, draft_status=-1)
+            db.session.add(new_rc)
+            db.session.flush()
+            if old_rc:
+                _copy_cols(old_rc, new_rc, skip={'id', 'actuatorMasterId', 'revision', 'draft_status'})
+            new_rc.actuator_ = new_act
+            new_rc.revision = 0
+            new_rc.draft_status = -1
+        else:
+            old_ac = db.session.query(actuatorCaseData).filter_by(actuator_=old_act, revision=revision_no).first()
+            new_ac = actuatorCaseData(actuator_=new_act, revision=0, draft_status=-1)
+            db.session.add(new_ac)
+            db.session.flush()
+            if old_ac:
+                _copy_cols(old_ac, new_ac, skip={'id', 'actuatorMasterId', 'revision', 'draft_status'})
+            new_ac.actuator_ = new_act
+            new_ac.revision = 0
+            new_ac.draft_status = -1
+
+            old_sc = (db.session.query(strokeCase)
+                      .filter_by(actuatorCase_=old_ac, revision=revision_no).first()
+                      if old_ac else None)
+            new_sc = strokeCase(actuatorCase_=new_ac, revision=0, draft_status=-1, status=1)
+            db.session.add(new_sc)
+            db.session.flush()
+            if old_sc:
+                _copy_cols(old_sc, new_sc, skip={'id', 'actuatorCaseId', 'revision', 'draft_status'})
+            new_sc.actuatorCase_ = new_ac
+            new_sc.revision = 0
+            new_sc.draft_status = -1
+
+            db.session.add(rotaryCaseData(actuator_=new_act, revision=0, draft_status=-1))
+    else:
+        new_ac = actuatorCaseData(actuator_=new_act, revision=0, draft_status=-1)
+        db.session.add(new_ac)
+        db.session.flush()
+        db.session.add(strokeCase(actuatorCase_=new_ac, status=1, revision=0, draft_status=-1))
+        db.session.add(rotaryCaseData(actuator_=new_act, revision=0, draft_status=-1))
+
+    # 6 — accessories
+    for old_acc in (db.session.query(accessoriesData)
+                    .filter_by(item=old_item, revision=revision_no)
+                    .order_by(accessoriesData.id).all()):
+        new_acc = accessoriesData(item=new_item, revision=0, draft_status=-1)
+        db.session.add(new_acc)
+        db.session.flush()
+        _copy_cols(old_acc, new_acc, skip={'id', 'itemId', 'revision', 'draft_status'})
+        new_acc.item = new_item
+
+    # 7 — item notes
+    for old_note in (db.session.query(itemNotesData)
+                     .filter_by(item=old_item, revision=revision_no)
+                     .order_by(itemNotesData.id).all()):
+        new_note = itemNotesData(item=new_item, revision=0, draft_status=-1)
+        db.session.add(new_note)
+        db.session.flush()
+        _copy_cols(old_note, new_note, skip={'id', 'itemId', 'revision', 'draft_status'})
+        new_note.item = new_item
+
+    # 8 — item revision record
+    db.session.add(itemRevisionTable(
+        item=new_item, itemRevisionNo=0, status="In progress",
+        prepared_by=current_user.code,
+        time=datetime.today(),
+    ))
+    db.session.commit()
+    return new_item
+
+
+# ---------------------------------------------------------------------------
+# /project/add-item
+# ---------------------------------------------------------------------------
+
+@bp.route('/add-item', methods=['POST'])
+@login_required
+@error_handler
+def add_item():
+    data            = request.get_json()
+    proj_id         = int(data['project_id'])
+    project_element = db.session.get(projectMaster, proj_id)
+    item_count      = (db.session.query(itemMaster)
+                       .filter_by(project=project_element).count())
+    item_number     = item_count + 1
+    new_item        = _add_new_item(project_element, item_number, 'A')
+    return jsonify({'status': 'success', 'message': 'Item added successfully', 'item_id': new_item.id})
+
+
+# ---------------------------------------------------------------------------
+# /project/copy-item
+# ---------------------------------------------------------------------------
+
+@bp.route('/copy-item', methods=['POST'])
+@login_required
+@error_handler
+def copy_item():
+    data            = request.get_json()
+    proj_id         = int(data['project_id'])
+    item_id         = int(data['item_id'])
+    copy_rev        = data.get('copy_rev')
+    old_item        = db.session.get(itemMaster, item_id)
+    project_element = db.session.get(projectMaster, proj_id)
+    item_count      = db.session.query(itemMaster).filter_by(project=project_element).count()
+    item_number     = item_count + 1
+    new_item        = _copy_item(project_element, item_number, old_item, copy_rev)
+    return jsonify({'status': 'success', 'message': 'Item copied successfully', 'item_id': new_item.id})
+
+
+# ---------------------------------------------------------------------------
 # /project/item-delete
 # ---------------------------------------------------------------------------
 
 @bp.route('/item-delete', methods=['POST'])
 @login_required
+@error_handler
 def item_delete():
-    item_id    = request.form['item_id']
-    reason     = request.form['reasonfordelete']
-    item_      = db.session.get(itemMaster, int(item_id))
+    data       = request.get_json()
+    item_id    = int(data['item_id'])
+    reason     = data['reasonfordelete']
+    item_      = db.session.get(itemMaster, item_id)
     project_id = item_.project.id
 
-    all_items = db.session.query(itemMaster).filter_by(project=item_.project).all()
+    item_count = db.session.query(itemMaster).filter_by(project=item_.project).count()
 
-    if len(all_items) == 1:
+    if item_count == 1:
         new_item = _add_new_item(item_.project, 1, "A")
-        flash("Blank Item Added, and item deleted successfully", "success")
         db.session.delete(item_)
         db.session.commit()
-        return_item_id = new_item.id
+        return jsonify({'status': 'success', 'message': 'Blank item added, and item deleted successfully', 'item_id': new_item.id})
     else:
         for rev in db.session.query(projectRevisionTable).filter_by(item=item_).all():
             rev.message = reason
@@ -876,37 +1079,10 @@ def item_delete():
         db.session.commit()
         db.session.delete(item_)
         db.session.commit()
-        flash("Item deleted successfully", "success")
-        remaining      = db.session.query(itemMaster).filter_by(
+        remaining = db.session.query(itemMaster).filter_by(
             project=db.session.get(projectMaster, project_id)
-        ).all()
-        return_item_id = remaining[0].id if remaining else None
-
-    proj           = db.session.get(projectMaster, project_id)
-    items_after    = db.session.query(itemMaster).filter_by(project=proj).all()
-    valve_data_list = (
-        db.session.query(valveDetailsMaster)
-        .filter(valveDetailsMaster.itemId.in_([i.id for i in items_after]))
-        .all()
-    )
-    data_list = [
-        {
-            "Item":        vd.item.itemNumber,
-            "alt":         vd.item.alternate,
-            "tagNo":       vd.item.id,
-            "series":      vd.item.id,
-            "size":        vd.item.id,
-            "model":       vd.item.id,
-            "type":        vd.item.id,
-            "rating":      vd.item.id,
-            "material":    vd.item.id,
-            "unitprice":   vd.item.id,
-            "qty":         vd.item.id,
-            "total_price": vd.item.id,
-        }
-        for vd in valve_data_list
-    ]
-    return json.dumps(data_list)
+        ).first()
+        return jsonify({'status': 'success', 'message': 'Item deleted successfully', 'item_id': remaining.id if remaining else None})
 
 
 # ---------------------------------------------------------------------------
@@ -1236,6 +1412,7 @@ def import_project(item_id, proj_id):
                 status='In progress',
                 prepared_by=current_user.code,
                 time=datetime.today().strftime('%Y-%m-%d %H:%M'),
+                # time=datetime.today(),  # desktop: SQLite requires datetime object, not string
             ))
             db.session.commit()
 
