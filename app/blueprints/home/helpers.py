@@ -124,7 +124,9 @@ def build_project_query(
             .options(*base_options)
             .filter(
                 *base_filter,
-                projectMaster.quoteNo.op('~')('^Q[0-9]{7}$'),
+                # .op('~') is PostgreSQL-only; .regexp_match() is dialect-agnostic
+                projectMaster.quoteNo.regexp_match('^Q[0-9]{7}$'),
+                # projectMaster.quoteNo.op('~')('^Q[0-9]{7}$'),
             )
         )
 
@@ -155,7 +157,9 @@ def build_project_query(
             .options(*base_options)
             .filter(
                 *base_filter,
-                projectMaster.quoteNo.op('~')('^Q[0-9]{7}$'),
+                # .op('~') is PostgreSQL-only; .regexp_match() is dialect-agnostic
+                projectMaster.quoteNo.regexp_match('^Q[0-9]{7}$'),
+                # projectMaster.quoteNo.op('~')('^Q[0-9]{7}$'),
                 year.between(low_year, high_year),
                 suffix.between(low_num, high_num),
             )
@@ -653,7 +657,9 @@ def getLatestFccLiveProject(res_type: str) -> str | None:
             projectMaster.projectRef != 'TESTCASES',
             projectMaster.quoteNo.isnot(None),
             projectMaster.quoteNo != '',
-            projectMaster.quoteNo.op("~")(quote_format),
+            # .op("~") is PostgreSQL-only; .regexp_match() is dialect-agnostic
+            projectMaster.quoteNo.regexp_match(quote_format),
+            # projectMaster.quoteNo.op("~")(quote_format),
         )
         .order_by(year.desc(), suffix.desc())
     )

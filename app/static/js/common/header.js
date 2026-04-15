@@ -84,10 +84,13 @@ document.addEventListener("click", function (e) {
     if (!page) return;          // data-action links — let the page handler deal with them
 
     e.preventDefault();
-
     const { projectId, itemId } = getCurrentIds();
     if (!projectId || !itemId) {
-        alert("Please select a project and item first");
+        const noAlertPaths = ["/project/add-project", "/home"];
+        const path = window.location.pathname;
+        if (!noAlertPaths.some(p => path.startsWith(p))) {
+            alert("Please select a project and item first");
+        }
         return;
     }
 

@@ -192,8 +192,8 @@
                                 </a>
 
                                 {# Delete item #}
-                                <a style="cursor:pointer" data-toggle="tooltip" title="Delete"
-                                   data-placement="bottom" onclick="">
+                                <a style="cursor:pointer" data-toggle="tooltip" title="Delete" id="itemDeleteBtn"
+                                   data-placement="bottom" >
                                     <svg id="i-close" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"
                                          width="11" height="11" fill="none" stroke="black"
                                          stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
@@ -322,13 +322,7 @@
                             <p class="text-muted text-center">Select a revision to copy</p>
                         </div>
                         <div class="modal-footer">
-                            {# TODO: implement 'copyItem' route (POST /item/copy/proj-<proj_id>/item-<item_id>) — copies selected item revision #}
-                            <form id="copyItemForm"
-                                  action="#"
-                                  onsubmit="copyItem()">
-                                <input type="hidden" name="copy_rev_item" class="copy_rev_item" />
-                                <button type="submit">Copy</button>
-                            </form>
+                            <button type="button" id="copyItemBtn">Copy</button>
                         </div>
                     </div>
                 </div>

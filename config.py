@@ -34,8 +34,34 @@ class ProductionConfig(Config):
     DEBUG = False
 
 
+class ElectronConfig(Config):
+    """SQLite-backed config for the Electron desktop bundle."""
+    DEBUG = False
+
+    # Store the database and user files in %APPDATA%\ValveSizing (Windows)
+    # or ~/.ValveSizing (macOS/Linux)
+    _user_data = os.path.join(
+        os.environ.get('APPDATA', os.path.expanduser('~')),
+        'ValveSizing'
+    )
+    os.makedirs(_user_data, exist_ok=True)
+
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///' + os.path.join(_user_data, 'valvesizing.db')
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # SQLite doesn't need pool settings
+    SQLALCHEMY_ENGINE_OPTIONS = {}
+
+    # Re-point upload/export folders to user data dir so they survive app updates
+    UPLOAD_FOLDER = os.path.join(_user_data, 'uploads')
+    EXPORT_FOLDER = os.path.join(_user_data, 'exports')
+
+    # Email is optional in desktop mode; disable to avoid startup errors
+    # MAIL_SERVER = None
+
+
 config_map = {
     "development": DevelopmentConfig,
     "production": ProductionConfig,
+    "electron": ElectronConfig,
     "default": DevelopmentConfig,
 }

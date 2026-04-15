@@ -1,5 +1,31 @@
-from flask import Flask
+import re
+import sqlite3
+from flask import Flask, render_template
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from config import config_map
+
+
+# ---------------------------------------------------------------------------
+# SQLite compatibility shims
+# Register functions that exist in PostgreSQL but not in SQLite so that
+# queries using func.right() and .regexp_match() work on both databases.
+# ---------------------------------------------------------------------------
+@event.listens_for(Engine, "connect")
+def _register_sqlite_functions(dbapi_connection, connection_record):
+    if not isinstance(dbapi_connection, sqlite3.Connection):
+        return
+    # RIGHT(str, n) — last n characters
+    dbapi_connection.create_function(
+        "right", 2,
+        lambda s, n: s[-n:] if s else ""
+    )
+    # REGEXP — used by SQLAlchemy's .regexp_match()
+    def _regexp(pattern, value):
+        if value is None:
+            return False
+        return bool(re.search(pattern, str(value)))
+    dbapi_connection.create_function("regexp", 2, _regexp)
 
 
 def create_app(config_name="default"):
