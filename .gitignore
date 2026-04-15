@@ -11,3 +11,4 @@ instance/
 exports/
 uploads/
 *.log
+/dist
