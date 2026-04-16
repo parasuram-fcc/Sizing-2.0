@@ -252,7 +252,7 @@ def getpipe_sch_params(pipesize, pipeunit: str, sch: str):
 # Testcase import module
 # ---------------------------------------------------------------------------
 
-def testcase_module(item_id, proj_id, quote_no: str) -> None:
+def testcase_module(quote_no: str) -> None:
     """
     Parse a testcase Excel file from the current request and persist it.
 

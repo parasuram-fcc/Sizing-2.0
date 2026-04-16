@@ -3,9 +3,11 @@ routes.py — Project blueprint routes.
 
 Routes:
   GET  /project/export-project/proj-<proj_id>/item-<item_id>
-  POST /project/import-project/proj-<proj_id>/item-<item_id>
+  POST /project/import-project
   GET  /project/add-project/
   POST /project/add-project/
+  GET  /project/edit-project/
+  POST /project/edit-project/
   GET  /project/check_quote
   GET  /project/submit-project-type
   POST /project/project-delete
@@ -121,6 +123,8 @@ from app.blueprints.project.helpers import (
     get_db_element_with_id,
     get_eng_addr_project,
     get_item_for_add_project,
+    noise_limit_set_,
+    trim_warning_set_,
 )
 from app.blueprints.home.helpers import (
     get_items_for_project,
@@ -388,6 +392,135 @@ def add_project():
     return render_template(
         'project/project_details.html',
         metadata=metadata_, user=current_user,
+    )
+
+
+# ---------------------------------------------------------------------------
+# /project/edit-project — Edit an existing project
+# ---------------------------------------------------------------------------
+
+@bp.route('/edit-project', methods=['GET', 'POST'])
+@login_required
+@error_handler
+def edit_project():
+    """
+    GET  — Render the edit-project form pre-populated with existing project data.
+    POST — JSON body. Validate, update projectMaster + relationships.
+           Returns JSON {status, project_id, item_id} on success
+           or {status, error} on failure.
+
+    proj_id and item_id are read from session (set by /home/set-context on navigation).
+    IDs are never exposed in the URL.
+    """
+    proj_id = session.get('selected_project')
+    item_id = session.get('selected_item')
+    if not proj_id or not item_id:
+        return jsonify({'status': 'error', 'message': 'No project selected'}), 403
+
+    project = (
+        db.session.query(projectMaster)
+        .options(
+            selectinload(projectMaster.industry),
+            selectinload(projectMaster.region),
+        )
+        .filter_by(id=proj_id)
+        .first()
+    )
+    if not project:
+        return jsonify({'status': 'error', 'message': 'Project not found'}), 404
+
+    if request.method == 'POST':
+        a = request.get_json()
+        # ── 1. Quote number validation (FCC live only) ────────────────────
+        if current_user.fccUser and current_user.projType == 1:
+            quote_no = a.get('quoteNo', '').strip()
+            if not re.fullmatch(r"Q\d{7}", quote_no):
+                return jsonify({
+                    'status': 'error',
+                    'error':  "Quote format should be 'Q' followed by 7 digit Number",
+                }), 400
+            project.quoteNo = quote_no
+
+        # ── 2. Update projectMaster fields ────────────────────────────────
+        try:
+
+            project.projectRef          = a['projectRef']
+            project.enquiryRef          = a['enquiryRef']
+            project.enquiryReceivedDate = datetime.strptime(a['enquiryReceivedDate'], '%Y-%m-%d')
+            project.receiptDate         = datetime.strptime(a['receiptDate'], '%Y-%m-%d')
+            project.bidDueDate          = datetime.strptime(a['bidDueDate'], '%Y-%m-%d')
+            project.purpose             = a['purpose']
+            project.custPoNo            = a['custPoNo']
+            project.workOderNo          = a['workOderNo']
+            project.status              = a['status']
+            project.industry            = (
+                db.session.get(industryMaster, int(a['industry']))
+                if a['industry'] != 'OEM' else None
+            )
+            project.region              = db.session.get(regionMaster, int(a['region']))
+            project.pressure_unit       = a['pressureUnit']
+            project.l_flowrate_type     = a['LiquidflowrateType']
+            project.l_flowrate_unit     = a['LiquidflowrateUnit']
+            project.g_flowrate_type     = a['GasflowrateType']
+            project.g_flowrate_unit     = a['GasflowrateUnit']
+            project.viscosity_type      = a['viscosity_']
+            project.viscosity_unit      = a['vis_units']
+            project.length_unit         = a['lengthUnit']
+            project.temperature_unit    = a['temperatureUnit']
+            project.trim_exit_velocity  = a['tev']
+            project.noise_limit         = int(a['noise_limit'])
+            db.session.commit()
+        except IntegrityError as e:
+            db.session.rollback()
+            if 'unique' in str(e.orig).lower() or 'duplicate' in str(e.orig).lower():
+                return jsonify({'status': 'error', 'message': 'Quote Number already exists!'}), 400
+            return jsonify({'status': 'error', 'message': 'Database error occurred.', 'error': str(e)}), 400
+        except Exception as e:
+            db.session.rollback()
+            traceback.print_exc()
+            return jsonify({'status': 'error', 'message': 'Something went wrong.', 'error': str(e)}), 400
+
+        # ── 3. Update company / engineer relationships ─────────────────────
+        try:
+            eng_element = db.session.query(engineerMaster).filter_by(name=a['aEng']).first()
+            add_project_rels(
+                cname     = a['cname'],
+                cnameE    = a['cnameE'],
+                address   = a['address'],
+                addressE  = a['addressE'],
+                aEng      = eng_element.id,
+                cEng      = a['cEng'],
+                project   = project,
+                operation = 'update',
+            )
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': 'Failed to update project relationships.', 'error': str(e)}), 400
+
+        # ── 4. Refresh noise / trim warnings ──────────────────────────────
+        noise_limit_set_(proj_id, project.noise_limit)
+        trim_warning_set_(proj_id, project.trim_exit_velocity)
+
+        return jsonify({
+            'status':     'success',
+            'message':    'Project updated successfully',
+            'project_id': proj_id,
+            'item_id':    item_id,
+        })
+
+    # ── GET ───────────────────────────────────────────────────────────────
+    metadata_    = add_project_metadata()
+    address_c, address_e, eng_a, eng_c = get_eng_addr_project(project)
+
+    return render_template(
+        'project/edit_project.html',
+        metadata    = metadata_,
+        user        = current_user,
+        project     = project,
+        item_id     = item_id,
+        address_c   = address_c,
+        address_e   = address_e,
+        eng_a       = eng_a,
+        eng_c       = eng_c,
     )
 
 
@@ -1133,52 +1266,55 @@ def project_delete():
 # /project/import-project — Import project from Excel
 # ---------------------------------------------------------------------------
 
-@bp.route('/import-project/proj-<int:proj_id>/item-<int:item_id>', methods=['POST'])
+@bp.route('/import-project', methods=['POST'])
 @login_required
 @error_handler
-def import_project(item_id, proj_id):
-    item = get_by_id(itemMaster, item_id)
+def import_project():
 
     if request.method == 'POST':
         # --- quote number ---
         if current_user.fccUser and current_user.projType == 1:
             quote_no = request.form.get('quote_no', '').strip()
             if not re.fullmatch(r'Q\d{7}', quote_no):
-                flash("Quote format should be 'Q' followed by 7 digit Number", 'failure')
-                return render_template(
-                    'project/import_project.html',
-                    item=item, page='importProject', user=current_user,
-                )
+                return jsonify({'status': 'error', 'message': "Quote format should be 'Q' followed by 7 digit Number"})
         elif current_user.fccUser and current_user.projType == 2:
             quote_no = generate_quote('T')
         else:
             quote_no = generate_quote('C')
 
         file = request.files.get('file')
-        df = pd.read_excel(file, header=None, keep_default_na=False)
+        file_content = file.read()   # read once; pass bytes to sub-functions
 
         # Testcase users get a simpler import path
         if current_user.projType == 2:
-            testcase_module(item_id, proj_id, quote_no)
-            return redirect(url_for('home.home', item_id=item_id, proj_id=proj_id))
+            file.seek(0)
+            testcase_module(quote_no)
+            return jsonify({'status': 'success', 'message': 'Project imported successfully'})
+
+        df = pd.read_excel(BytesIO(file_content), header=None, keep_default_na=False)
 
         # ---- parse section indices ----
         def _find_index(marker: str) -> int:
-            return df[df.apply(
-                lambda row: row.astype(str).str.contains(marker).any(), axis=1
-            )].index[0]
-
-        items_index         = _find_index('Items')
-        valveWarnings_index = _find_index('ValveWarnings')
-        case_index          = _find_index('CaseDetails')
-        caseWarnings_index  = _find_index('CaseWarnings')
-        actuator_index      = _find_index('Actuator')
-        volumetank_index    = _find_index('VolumeTank')
-        accessories_index   = _find_index('Accessories')
-        itemnotes_index     = _find_index('ItemNotes')
-        customer_index      = _find_index('Customer')
-        end_index           = _find_index('FinishExcel')
-
+            try:
+                return df[df.apply(
+                    lambda row: row.astype(str).str.contains(marker).any(), axis=1
+                )].index[0]
+            except Exception as e:
+                raise ValueError(f"Can not find {marker} in your file.")
+        try:
+            items_index         = _find_index('Items')
+            valveWarnings_index = _find_index('ValveWarnings')
+            case_index          = _find_index('CaseDetails')
+            caseWarnings_index  = _find_index('CaseWarnings')
+            actuator_index      = _find_index('Actuator')
+            volumetank_index    = _find_index('VolumeTank')
+            accessories_index   = _find_index('Accessories')
+            itemnotes_index     = _find_index('ItemNotes')
+            customer_index      = _find_index('Customer')
+            end_index           = _find_index('FinishExcel')
+        except Exception as e:
+            return jsonify({'status':'warning', 'message':'Please upload the correct file format. '+ str(e), 'error':str(e)}), 400
+        
         # ---- parse project row ----
         proj_headers = df.iloc[1].to_list()
         proj_data    = df.iloc[2].to_list()
@@ -1303,13 +1439,9 @@ def import_project(item_id, proj_id):
             # traceback.print_exc()
             db.session.rollback()
             if 'unique' in str(exc.orig).lower() or 'duplicate' in str(exc.orig).lower():
-                flash('Quote Number already exists!', 'failure')
+                return jsonify({'status': 'error', 'message': 'Quote Number already exists!', 'error': str(exc)})
             else:
-                flash('Database error occurred. Please try again.', 'failure')
-            return render_template(
-                'project/import_project.html',
-                item=item, page='importProject', user=current_user,
-            )
+                return jsonify({'status': 'error', 'message': 'Database error occurred. Please try again.', 'error': str(exc)})
 
         time = datetime.now()
         project_details['IndustryId'] = [get_by_name(industryMaster, project_details['IndustryId'][0])]
@@ -1601,8 +1733,15 @@ def import_project(item_id, proj_id):
             note_obj.update(note_, note_obj.id)
             db.session.commit()
 
-        flash('Project imported successfully', 'success')
-        return redirect(url_for('home.home', item_id=item_id, proj_id=proj_id))
+        quote_range = None
+        if current_user.fccUser and current_user.projType == 1:
+            num          = int(quote_no[3:])
+            bucket_start = (num // 100) * 100
+            bucket_end   = bucket_start + 99
+            prefix       = quote_no[:3]
+            quote_range  = f"{prefix}{str(bucket_start).zfill(4)} - {prefix}{str(bucket_end).zfill(4)}"
+            session['selected_bucket'] = quote_range
+        return jsonify({'status': 'success', 'message': 'Project imported successfully', 'quote_range': quote_range})
 
 
 # ---------------------------------------------------------------------------

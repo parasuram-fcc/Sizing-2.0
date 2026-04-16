@@ -1,0 +1,452 @@
+{% block content %}
+{% include "common/header.html" %}
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/home/project_details.css') }}">
+
+{# ── JSON data for project_details.js (edit mode) ── #}
+<script>
+    const CUSTOMER_NAMES      = {{ metadata['notes_dict_'] | tojson }};
+    const UNITS_DICT          = {{ metadata['units_dict']   | tojson }};
+    const IS_FCC_PROJ         = {{ (user.fccUser == True and user.projType == 1) | tojson }};
+    const EDIT_PROJECT_URL    = "{{ url_for('project.edit_project') }}";
+
+    {# Pre-selected values for cascade dropdowns #}
+    const SELECTED_CUSTOMER   = {{ (address_c.address.company.name if address_c and address_c.address and address_c.address.company else '') | tojson }};
+    const SELECTED_ADDRESS    = {{ (address_c.address.address if address_c and address_c.address else '') | tojson }};
+    const SELECTED_ENDUSER    = {{ (address_e.address.company.name if address_e and address_e.address and address_e.address.company else '') | tojson }};
+    const SELECTED_ENDUSER_ADDR = {{ (address_e.address.address if address_e and address_e.address else '') | tojson }};
+
+    {# Pre-selected unit values for dynamic rebuilders #}
+    const PROJECT_VISCOSITY_TYPE = {{ project.viscosity_type | tojson }};
+    const PROJECT_VISCOSITY_UNIT = {{ project.viscosity_unit | tojson }};
+    const PROJECT_GAS_FLOW_TYPE  = {{ project.g_flowrate_type | tojson }};
+    const PROJECT_GAS_UNIT       = {{ project.g_flowrate_unit | tojson }};
+    const PROJECT_LIQ_FLOW_TYPE  = {{ project.l_flowrate_type | tojson }};
+    const PROJECT_LIQ_UNIT       = {{ project.l_flowrate_unit | tojson }};
+</script>
+
+<form id="edit-project-form">
+
+    <div class="container-fulid mt-4 ml-1" style="zoom:0.85">
+        <div class="row">
+
+            <!-- Project Details -->
+            <div class="col-4 mt-4 mb-1">
+                <div class="projectdetails-form shadow">
+                    <h6 class="projectdetail_heading"><b>Project Details</b></h6>
+                    <hr>
+
+                    {% if user.fccUser == True and user.projType == 1 %}
+                    <div class="row mt-2">
+                        <div class="col-6">
+                            <label for="quoteno">Quote No</label>
+                        </div>
+                        <div class="col-6" style="position:relative;">
+                            <input name="quoteNo" class="form-control-sm-sm projectdetail_input"
+                                   maxlength="8" id="quoteno"
+                                   value="{{ project.quoteNo }}"
+                                   placeholder="Q + yy + 5 digits"
+                                   data-proj-id="{{ project.id }}"
+                                   autocomplete="off" />
+                            <small id="quoteno-feedback" class="form-text" style="display:block; position:absolute; top:60%;font-size:0.75rem;"></small>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="row mt-2">
+                        <div class="col-6">
+                            <label for="company">Customer Name</label>
+                        </div>
+                        <div class="col-6">
+                            <select name="cname" class="form-control-sm-sm projectdetail_input"
+                                    id="company" required>
+                                <option value="">--Select--</option>
+                                {% for company in metadata['notes_dict_'] %}
+                                    <option value="{{ company }}"
+                                        {% if address_c and address_c.address and address_c.address.company and address_c.address.company.name == company %}selected{% endif %}>
+                                        {{ company }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1">
+                        <div class="col-6">
+                            <label for="address">Address</label>
+                        </div>
+                        <div class="col-6">
+                            <select name="address" id="address"
+                                    class="form-control-sm-sm projectdetail_input">
+                                <option value="">--Select--</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1">
+                        <div class="col-6">
+                            <label for="companyE">End User</label>
+                        </div>
+                        <div class="col-6">
+                            <select name="cnameE" id="companyE"
+                                    class="form-control-sm-sm projectdetail_input" required>
+                                <option value="">--Select--</option>
+                                {% for company in metadata['notes_dict_'] %}
+                                    <option value="{{ company }}"
+                                        {% if address_e and address_e.address and address_e.address.company and address_e.address.company.name == company %}selected{% endif %}>
+                                        {{ company }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1">
+                        <div class="col-6">
+                            <label for="addressE">End User Address</label>
+                        </div>
+                        <div class="col-6">
+                            <select name="addressE" id="addressE"
+                                    class="form-control-sm-sm projectdetail_input">
+                                <option value="">--Select--</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1">
+                        <div class="col-6">
+                            <label>Project Name</label>
+                        </div>
+                        <div class="col-6">
+                            <input type="text" class="form-control-sm-sm projectdetail_input"
+                                   name="projectRef" value="{{ project.projectRef }}" required>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1">
+                        <div class="col-6">
+                            <label>Enquiry Ref.</label>
+                        </div>
+                        <div class="col-6">
+                            <input type="text" class="form-control-sm-sm projectdetail_input"
+                                   name="enquiryRef" value="{{ project.enquiryRef }}" required>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1">
+                        <div class="col-6">
+                            <label>Enquiry Date</label>
+                        </div>
+                        <div class="col-6">
+                            <input type="date" class="form-control-sm-sm projectdetail_input"
+                                   name="enquiryReceivedDate"
+                                   {% if project.enquiryReceivedDate %}value="{{ project.enquiryReceivedDate.date() }}"{% endif %}>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1">
+                        <div class="col-6">
+                            <label>Receipt Date</label>
+                        </div>
+                        <div class="col-6">
+                            <input type="date" class="form-control-sm-sm projectdetail_input"
+                                   name="receiptDate"
+                                   {% if project.receiptDate %}value="{{ project.receiptDate.date() }}"{% endif %}>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1">
+                        <div class="col-6">
+                            <label>Bid Due Date</label>
+                        </div>
+                        <div class="col-6">
+                            <input type="date" class="form-control-sm-sm projectdetail_input"
+                                   name="bidDueDate"
+                                   {% if project.bidDueDate %}value="{{ project.bidDueDate.date() }}"{% endif %}>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1">
+                        <div class="col-6 pr-0">
+                            <label for="application_eng">Application Engineer</label>
+                        </div>
+                        <div class="col-6">
+                            <input class="form-control-sm-sm projectdetail_select"
+                                   name="aEng" id="application_eng"
+                                   value="{{ current_user.name }}" readonly>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1">
+                        <div class="col-6">
+                            <label for="purpose">Purpose</label>
+                        </div>
+                        <div class="col-6">
+                            <select class="form-control-sm-sm projectdetail_select"
+                                    name="purpose" id="purpose" style="width:100%">
+                                {% for purpose in metadata['purpose'] %}
+                                    <option value="{{ purpose }}"
+                                        {% if project.purpose == purpose %}selected{% endif %}>
+                                        {{ purpose }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1">
+                        <div class="col-6">
+                            <label for="Industry">Industry</label>
+                        </div>
+                        <div class="col-6">
+                            <select class="form-control-sm-sm projectdetail_select"
+                                    name="industry" id="Industry">
+                                {% for industry in metadata['industries'] %}
+                                    <option value="{{ industry.id }}"
+                                        {% if project.industry and project.industry.id == industry.id %}selected{% endif %}>
+                                        {{ industry.name }}
+                                    </option>
+                                {% endfor %}
+                                <option value="OEM" {% if not project.industry %}selected{% endif %}>OEM</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1">
+                        <div class="col-6">
+                            <label for="region">Region</label>
+                        </div>
+                        <div class="col-6">
+                            <select class="form-control-sm-sm projectdetail_select"
+                                    name="region" id="region">
+                                {% for region in metadata['regions'] %}
+                                    <option value="{{ region.id }}"
+                                        {% if project.region and project.region.id == region.id %}selected{% endif %}>
+                                        {{ region.name }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Order Information + Preferences -->
+            <div class="col-4 mt-4">
+                <div class="orderinformation-form shadow">
+                    <h6><b>Order Information</b></h6>
+                    <hr>
+
+                    <div class="row mt-1">
+                        <div class="col-6">
+                            <label for="Contract_Engineer">Contract Engineer</label>
+                        </div>
+                        <div class="col-6">
+                            <select class="form-control-sm-sm projectdetail_select"
+                                    name="cEng" id="Contract_Engineer">
+                                {% if user.fccUser %}
+                                    {% for engineer in metadata['engineers'] %}
+                                        <option value="{{ engineer.id }}"
+                                            {% if eng_c and eng_c.engineer and eng_c.engineer.id == engineer.id %}selected{% endif %}>
+                                            {{ engineer.name }}
+                                        </option>
+                                    {% endfor %}
+                                {% else %}
+                                    <option value="{{ user.id }}" selected>{{ user.name }}</option>
+                                {% endif %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1">
+                        <div class="col-6">
+                            <label>Customer PO No</label>
+                        </div>
+                        <div class="col-6">
+                            <input type="text" class="form-control-sm-sm projectdetail_input"
+                                   value="{{ project.custPoNo }}" name="custPoNo">
+                        </div>
+                    </div>
+
+                    <div class="row mt-1">
+                        <div class="col-6">
+                            <label>Work Order No</label>
+                        </div>
+                        <div class="col-6">
+                            <input type="text" class="form-control-sm-sm projectdetail_input"
+                                   value="{{ project.workOderNo }}" name="workOderNo">
+                        </div>
+                    </div>
+
+                    <div class="row mt-1">
+                        <div class="col-6">
+                            <label>Status</label>
+                        </div>
+                        <div class="col-6">
+                            <select name="status" class="form-control-sm-sm projectdetail_input">
+                                {% for stat in metadata['status'] %}
+                                    <option value="{{ stat }}"
+                                        {% if project.status == stat %}selected{% endif %}>
+                                        {{ stat }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <br>
+                    <h6 class="preference_heading"><b>Preferences</b></h6>
+                    <hr>
+
+                    <div class="row mt-1 align-items-center">
+                        <div class="col-6">
+                            <select id="liq_flow" class="form-control-sm preference_select"
+                                    name="LiquidflowrateType">
+                                <option value="vol" {% if project.l_flowrate_type == 'vol' %}selected{% endif %}>Liquid Vol Flowrate</option>
+                                <option value="mass" {% if project.l_flowrate_type == 'mass' %}selected{% endif %}>Liquid Mass Flowrate</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <select id="liq_unit" class="form-control-sm preference_select"
+                                    name="LiquidflowrateUnit">
+                                {# populated by JS on load #}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1 align-items-center">
+                        <div class="col-6">
+                            <select id="gas_flow" class="form-control-sm preference_select"
+                                    name="GasflowrateType">
+                                <option value="vol" {% if project.g_flowrate_type == 'vol' %}selected{% endif %}>Gas Vol Flowrate</option>
+                                <option value="mass" {% if project.g_flowrate_type == 'mass' %}selected{% endif %}>Gas Mass Flowrate</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <select id="gas_unit" class="form-control-sm preference_select"
+                                    name="GasflowrateUnit">
+                                {# populated by JS on load #}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1 align-items-center">
+                        <div class="col-6">
+                            <select id="viscos" class="form-control-sm preference_select"
+                                    name="viscosity_">
+                                <option value="dynamic" {% if project.viscosity_type == 'dynamic' %}selected{% endif %}>Dynamic viscosity</option>
+                                <option value="kinematic" {% if project.viscosity_type == 'kinematic' %}selected{% endif %}>Kinematic Viscosity</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <select id="v_units" class="form-control-sm preference_select"
+                                    name="vis_units">
+                                {# populated by JS on load #}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1 align-items-center">
+                        <div class="col-6">
+                            <label>Pressure unit</label>
+                        </div>
+                        <div class="col-6">
+                            <select class="form-control-sm-sm preference_select" name="pressureUnit">
+                                {% for presunit in metadata['units_dict']['pressure'] %}
+                                    <option value="{{ presunit.id }}"
+                                        {% if presunit.id == project.pressure_unit %}selected{% endif %}>
+                                        {{ presunit.name }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1 align-items-center">
+                        <div class="col-6">
+                            <label>Length unit</label>
+                        </div>
+                        <div class="col-6">
+                            <select class="form-control-sm-sm preference_select" name="lengthUnit">
+                                {% for length in metadata['units_dict']['length'] %}
+                                    <option value="{{ length.id }}"
+                                        {% if length.id == project.length_unit %}selected{% endif %}>
+                                        {{ length.name }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1 align-items-center">
+                        <div class="col-6">
+                            <label>Temperature unit</label>
+                        </div>
+                        <div class="col-6">
+                            <select class="form-control-sm-sm preference_select" name="temperatureUnit">
+                                {% for temperature in metadata['units_dict']['temperature'] %}
+                                    <option value="{{ temperature.id }}"
+                                        {% if temperature.id == project.temperature_unit %}selected{% endif %}>
+                                        {{ temperature.name }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1 align-items-center">
+                        <div class="col-6">
+                            <label for="noise_limit">Noise Limit</label>
+                        </div>
+                        <div class="col-6">
+                            <div class="input-group input-group-sm">
+                                <input type="number" class="form-control" id="noise_limit"
+                                       name="noise_limit"
+                                       value="{{ project.noise_limit | default(85, true) }}"
+                                       required>
+                                <span class="input-group-text px-2 py-0">dBA</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row mt-1 align-items-center">
+                        <div class="col-6">
+                            <label class="form-label mb-0">Trim Exit Velocity</label>
+                        </div>
+                        <div class="col-6 d-flex gap-3">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio"
+                                       name="tev" id="trim_1" value="yes"
+                                       {% if project.trim_exit_velocity == 'yes' %}checked{% endif %} required>
+                                <label class="form-check-label" for="trim_1">Yes</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio"
+                                       name="tev" id="trim_2" value="no"
+                                       {% if project.trim_exit_velocity != 'yes' %}checked{% endif %}>
+                                <label class="form-check-label" for="trim_2">No</label>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="col-3"></div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12 fixed-bottom d-flex justify-content-end mb-3" style="zoom:0.85">
+            <button type="button" id="edit-project-btn" class="btn btn-info btn-sm projectdetail_btn">Update Project</button>
+        </div>
+    </div>
+
+</form>
+
+<script src="{{ url_for('static', filename='js/common/utils.js') }}"></script>
+<script src="{{ url_for('static', filename='js/project/project_details.js') }}"></script>
+
+{% include "common/footer.html" %}
+{% endblock %}

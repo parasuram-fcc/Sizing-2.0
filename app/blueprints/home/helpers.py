@@ -217,9 +217,9 @@ def apply_project_search(query, search_type: str | None, search_value: str | Non
     elif search_type == 'customer':
         query = (
             query
-            .join(projectMaster.project_address)
-            .join(addressProject.address)
-            .join(addressMaster.company)
+            .outerjoin(projectMaster.project_address)
+            .outerjoin(addressProject.address)
+            .outerjoin(addressMaster.company)
             .filter(
                 addressProject.isCompany.is_(True),
                 companyMaster.name.ilike(f"{search_value}%"),

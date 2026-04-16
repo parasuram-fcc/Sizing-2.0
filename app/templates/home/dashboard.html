@@ -83,7 +83,7 @@
                         {% endif %}
 
                         {# Convert project (superusers only) #}
-                        {% if user.email in ['gokulakrishnan@fccommune.com', 'devayani@fccommune.com'] %}
+                        {% if user.email in ['gokulakrishnan@fccommune.com', 'devayani@fccommune.com', 'parasuram@fccommune.com'] %}
                         {# TODO: implement 'convertProject' route (GET /project/convert/proj-<proj_id>/item-<item_id>) — converts project type (superuser only) #}
                         <a href="#"
                            style="text-decoration:none;">
@@ -100,22 +100,21 @@
                         </a>
                         {% endif %}
 
-                        {# Project bucket selector (FCC live projects only) #}
-                        {% if user.fccUser and user.projType == 1 %}
-                        <select id="bucketSelect" class="bucket_list">
+                        {# Project bucket selector + Run button (FCC users only; toggled dynamically on projType switch) #}
+                        {% if user.fccUser %}
+                        <select id="bucketSelect" class="bucket_list" {% if user.projType != 1 %}style="display:none"{% endif %}>
                                 {% for bucket in all_buckets %}
                                 <option value="{{ bucket }}" {% if selected_bucket == bucket %}selected style="color: blue;" {% endif %}>
                                     {{ bucket }}
                                 </option>
                                 {% endfor %}
                         </select>
-                        {% endif %}
 
-                        {# Run all items (Testcases only) #}
-                        {% if user.projType == 2 %}
-                        <a data-action="valvesizingallitems" href="#" class="nav-link nav-dynamic" style="color:black;">
-                            Run
-                        </a>
+                        <div id="runBtn" {% if user.projType != 2 %}style="display:none"{% endif %}>
+                            <a data-action="valvesizingallitems" href="#" class="nav-link nav-dynamic" style="color:black;">
+                                Run
+                            </a>
+                        </div>
                         {% endif %}
 
                     </div>

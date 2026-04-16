@@ -53,8 +53,6 @@ window.addEventListener("beforeunload", function (event) {
  * Returns { projectId, itemId } — both strings or undefined.
  */
 function getCurrentIds() {
-    sessionStorage.getItem('proj_id')
-    // const parts = window.location.pathname.split('/');
     return {
         projectId: sessionStorage.getItem('proj_id'),
         itemId:    sessionStorage.getItem('item_id')
@@ -85,18 +83,43 @@ document.addEventListener("click", function (e) {
 
     e.preventDefault();
 
-    const { projectId, itemId } = getCurrentIds();
-    if (!projectId || !itemId) {
-        const noAlertPaths = ["/project/add-project", "/home"];
-        const path = window.location.pathname;
-        if (!noAlertPaths.some(p => path.startsWith(p))) {
-            alert("Please select a project and item first");
-        }
+    const isCurrentHome = window.location.pathname.startsWith('/home');
+    const isTargetHome  = (page === 'home');
+
+    // Case 2: home → home — direct reload, no check
+    if (isCurrentHome && isTargetHome) {
+        allowNavigation = true;
+        window.location.href = `/${page}`;
         return;
     }
 
-    allowNavigation = true;
-    window.location.href = `/${page}`; // /proj-${projectId}/item-${itemId}
+    // Case 1: home → other pages — store context in session, redirect (no IDs in URL)
+    if (isCurrentHome && !isTargetHome) {
+        const { projectId, itemId } = getCurrentIds();
+        if (!projectId || !itemId) {
+            alert("Please select a project and item first");
+            return;
+        }
+
+        $.ajax({
+            url: '/home/set-context',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ projectId, itemId }),
+            success: function () {
+                allowNavigation = true;
+                window.location.href = `/${page}`;
+            },
+            error: function (xhr) {
+                var resp = JSON.parse(xhr.responseText);
+                showFlash(resp.message || 'Something went wrong', 'error');
+            }
+        });
+        return;
+    }
+
+    // Case 3: others → home — allowNavigation stays false, beforeunload asks confirmation
+    window.location.href = `/${page}`;
 });
 
 

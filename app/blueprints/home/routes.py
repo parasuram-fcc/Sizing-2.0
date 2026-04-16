@@ -8,6 +8,8 @@ Routes:
   GET /load_testcase_projects
 """
 
+import traceback
+
 from flask import render_template, request, session, jsonify
 from flask_login import current_user, login_required
 from sqlalchemy import or_
@@ -46,6 +48,7 @@ from app.blueprints.home.helpers import (
     serialize_item,
     serialize_project,
 )
+from app.utils.helpers import error_handler
 from config import Config
 from datetime import datetime
 
@@ -77,12 +80,16 @@ def home(proj_id, item_id):
         if not user.projType:
             user.projType = 1
 
-        if user.projType == 1:
+        # if user.projType == 1:
+        try:
             last_project = getLatestFccLiveProject('last')
             selected_bucket = resolve_project_bucket(request, session, last_project)
             from_year = datetime.today().year - int(Config.QOUTE_RANGE)
             all_buckets = make_project_groups(last_project, f'Q{str(from_year)}00000', 100)[::-1]
             all_buckets += ["All", "Obsolete"]
+        except:
+            selected_bucket = None
+            all_buckets = ["All", "Obsolete"]
 
     # =========================================================
     # 2. RANDOM DATA FLAG
@@ -293,3 +300,13 @@ def load_testcase_projects():
 
     projects = query_.order_by(projectMaster.id.desc()).all()
     return jsonify({"projects": [serialize_project(p) for p in projects]})
+
+@bp.route('/home/set-context', methods = ['POST'])
+@login_required
+@error_handler
+def set_context():
+    data = request.get_json()
+    session['selected_project'] = int(data['projectId'])
+    session['selected_item'] = int(data['itemId'])
+    return jsonify({'status':'success', 'message':'ok'})
+

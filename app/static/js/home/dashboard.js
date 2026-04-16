@@ -135,11 +135,14 @@ $(document).ready(function () {
             data: { proj_type },
             success: function () {
                 const bucketSelect = document.getElementById('bucketSelect');
+                const run_btn = document.getElementById('runBtn')
                 if (proj_type === '2') {
                     if (bucketSelect) bucketSelect.style.display = 'none';
+                    if (run_btn) run_btn.style.display = '';
                     loadTestcaseProjects();
                 } else {
                     if (bucketSelect) bucketSelect.style.display = '';
+                    if (run_btn) run_btn.style.display = 'none';
                     resetItemTable();
                     loadProjects();
                 }
@@ -681,7 +684,7 @@ function itemDelete(_itemid) { // check for
 window.addEventListener("popstate", function (event) {
     if (!event.state) return;
 
-    const { projId, itemId } = event.state;
+    const { projId } = event.state;
     getItemsByProject(projId, items => {
         updateItemsList(items);
     });
@@ -1159,7 +1162,6 @@ $(document).on('show.bs.modal', '#exportProjModal', function () {
 
 /* Import project modal — setup form and quote validation */
 $(document).on('show.bs.modal', '#importProjModal', function () {
-    const { projectId, itemId } = getCurrentIds();
     const isFcc     = document.getElementById('isFccProject').value === 'true';
     const projType  = parseInt(document.getElementById('projectType').value || '1', 10);
     const quoteField    = document.getElementById('importQuoteField');
@@ -1167,8 +1169,8 @@ $(document).on('show.bs.modal', '#importProjModal', function () {
     const quoteFeedback = document.getElementById('importQuoteFeedback');
     const form          = document.getElementById('importProjForm');
 
-    /* Set form action to the current project/item */
-    form.action = `/project/import-project/proj-${projectId}/item-${itemId}`;
+    /* Set form action */
+    form.action = '/project/import-project';
 
     /* Show quote field only for FCC live users */
     const needsQuote = isFcc && projType === 1;
@@ -1198,7 +1200,25 @@ $(document).on('click', '#importProjSubmitBtn', function () {
         return;
     }
 
-    document.getElementById('importProjForm').submit();
+    const btn  = this;
+    const form = document.getElementById('importProjForm');
+    $(btn).prop('disabled', true).text('Importing...');
+
+    fetch(form.action, { method: 'POST', body: new FormData(form) })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                $('#importProjModal').modal('hide');
+                loadProjects(data.quote_range || undefined);
+            } else {
+                // showFlash(data.message, 'error');
+                $(btn).prop('disabled', false).text('Import Project');
+            }
+        })
+        .catch(() => {
+            showFlash('Import failed. Please try again.', 'error');
+            $(btn).prop('disabled', false).text('Import Project');
+        });
 });
 
 

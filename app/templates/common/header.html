@@ -74,17 +74,15 @@
                         {% endif %}
                     </li>
 
-                    {# --- Project Details (TODO: endpoint not yet in v2) --- #}
+                    {# --- Project Details --- #}
                     <li class="nav-item">
-                        <p>
-                            {# TODO (v2): wire up url when edit-project blueprint is ready #}
-                            <a id="projectDetails"
-                               class="nav-link nav-link-disabled"
-                               title="Project Details — not yet available in v2">
-                                <span class="d-none d-lg-inline">Project Details</span>
-                                <span class="d-lg-none">PD</span>
-                            </a>
-                        </p>
+                        <a data-page="project/edit-project" id="projectDetails"
+                           class="nav-link nav-dynamic {% if request.path | url_path == 'project' %}active-sidebar{% endif %}"
+                           href="#"
+                           title="Project Details">
+                            <span class="d-none d-lg-inline">Project Details</span>
+                            <span class="d-lg-none">PD</span>
+                        </a>
                     </li>
 
                     {# --- Valve Data (TODO: endpoint not yet in v2) --- #}

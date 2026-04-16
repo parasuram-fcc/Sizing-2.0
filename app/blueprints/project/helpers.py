@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy.orm import load_only, joinedload
+from sqlalchemy.orm import load_only, joinedload, selectinload
 from flask_login import current_user
 
 from app.extensions import db
@@ -23,12 +23,18 @@ from app.models.master import (
     regionMaster,
     engineerMaster,
 )
+import json
+
+from app.models.master import caseWarningMaster
 from app.models.transactional import (
     projectMaster,
     itemMaster,
     userMaster,
     addressProject,
     engineerProject,
+    caseMaster,
+    caseWarnings,
+    valveDetailsMaster,
 )
 
 
@@ -46,14 +52,28 @@ def get_db_element_with_id(table, id_):
 def get_eng_addr_project(project):
     """
     Return (address_c, address_e, eng_a, eng_c) for the given project.
-
-    address_c / address_e — addressProject rows (company / end-user)
-    eng_a     / eng_c     — engineerProject rows (application / contact)
+    2 queries instead of 4: fetch all rows per table, split by flag in Python.
+    Relationships are eagerly loaded to prevent lazy hits in the template.
     """
-    address_c = db.session.query(addressProject).filter_by(project=project, isCompany=True).first()
-    address_e = db.session.query(addressProject).filter_by(project=project, isCompany=False).first()
-    eng_a     = db.session.query(engineerProject).filter_by(project=project, isApplication=True).first()
-    eng_c     = db.session.query(engineerProject).filter_by(project=project, isApplication=False).first()
+    addrs = (
+        db.session.query(addressProject)
+        .options(
+            selectinload(addressProject.address)
+            .selectinload(addressMaster.company)
+        )
+        .filter_by(project=project)
+        .all()
+    )
+    engs = (
+        db.session.query(engineerProject)
+        .options(selectinload(engineerProject.engineer))
+        .filter_by(project=project)
+        .all()
+    )
+    address_c = next((a for a in addrs if a.isCompany),         None)
+    address_e = next((a for a in addrs if not a.isCompany),     None)
+    eng_a     = next((e for e in engs  if e.isApplication),     None)
+    eng_c     = next((e for e in engs  if not e.isApplication), None)
     return address_c, address_e, eng_a, eng_c
 
 
@@ -264,17 +284,24 @@ def add_project_rels(
     """
     Create or update addressProject and engineerProject rows for a project.
     """
-    company_element   = db.session.query(companyMaster).filter_by(name=cname).first()
-    company_element_E = db.session.query(companyMaster).filter_by(name=cnameE).first()
-    company_address_element   = db.session.query(addressMaster).filter_by(
-        address=address, company=company_element).first()
-    company_address_element_E = db.session.query(addressMaster).filter_by(
-        address=addressE, company=company_element_E).first()
-
     aEng_ = db.session.get(engineerMaster, int(aEng))
     cEng_ = db.session.get(engineerMaster, int(cEng))
 
-    if not current_user.fccUser:
+    if current_user.fccUser:
+        # Batch: 1 query for both companies instead of 2
+        companies = (
+            db.session.query(companyMaster)
+            .filter(companyMaster.name.in_([cname, cnameE]))
+            .all()
+        )
+        company_map          = {c.name: c for c in companies}
+        company_element      = company_map.get(cname)
+        company_element_E    = company_map.get(cnameE)
+        company_address_element   = db.session.query(addressMaster).filter_by(
+            address=address,  company=company_element).first()
+        company_address_element_E = db.session.query(addressMaster).filter_by(
+            address=addressE, company=company_element_E).first()
+    else:
         user_name = db.session.get(userMaster, int(cEng))
         cEng_ = db.session.query(engineerMaster).filter_by(name=user_name.name).first()
         company_element   = db.session.query(companyMaster).filter_by(name=cname).all()
@@ -283,11 +310,11 @@ def add_project_rels(
         company_address_element_E = None
         for i, j in zip(company_element, company_element_E):
             ele   = db.session.query(addressMaster).filter_by(
-                address=address, company=i, user=current_user).first()
+                address=address,  company=i, user=current_user).first()
             ele_E = db.session.query(addressMaster).filter_by(
                 address=addressE, company=j, user=current_user).first()
             if ele:
-                company_address_element = ele
+                company_address_element   = ele
             if ele_E:
                 company_address_element_E = ele_E
 
@@ -299,6 +326,30 @@ def add_project_rels(
             engineerProject(isApplication=False, engineer=cEng_, project=project),
         ])
         db.session.commit()
+
+    elif operation == 'update':
+        # Batch: 2 queries instead of 4 to fetch relationship rows
+        addrs = db.session.query(addressProject).filter_by(project=project).all()
+        engs  = db.session.query(engineerProject).filter_by(project=project).all()
+        addr_c = next((a for a in addrs if a.isCompany),         None)
+        addr_e = next((a for a in addrs if not a.isCompany),     None)
+        er_app = next((e for e in engs  if e.isApplication),     None)
+        er_con = next((e for e in engs  if not e.isApplication), None)
+
+        if addr_c and addr_e and er_app and er_con:
+            addr_c.address  = company_address_element
+            addr_e.address  = company_address_element_E
+            er_app.engineer = aEng_
+            er_con.engineer = cEng_
+            db.session.commit()
+        else:
+            db.session.add_all([
+                addressProject(isCompany=True,  address=company_address_element,   project=project),
+                addressProject(isCompany=False, address=company_address_element_E, project=project),
+                engineerProject(isApplication=True,  engineer=aEng_, project=project),
+                engineerProject(isApplication=False, engineer=cEng_, project=project),
+            ])
+            db.session.commit()
 
     elif operation == 'update':
         addr_c  = db.session.query(addressProject).filter_by(isCompany=True,  project=project).first()
@@ -320,3 +371,120 @@ def add_project_rels(
                 engineerProject(isApplication=False, engineer=cEng_, project=project),
             ])
             db.session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Post-edit warning refreshers — called after edit_project updates noise
+# limit / trim exit velocity preferences on the project.
+# ---------------------------------------------------------------------------
+
+def _get_warning_actions(warning: str) -> list:
+    """Return recommended_solution strings for a caseWarningMaster entry."""
+    return [
+        row[0]
+        for row in db.session.query(caseWarningMaster.recommended_solution)
+                             .filter_by(warning=warning)
+                             .all()
+    ]
+
+
+def noise_limit_set_(proj_id: int, limit: int) -> None:
+    """
+    Add or remove the 'High Noise' caseWarnings row on every case of every
+    item in the project, based on whether spl > limit.
+
+    Optimized: 3 bulk queries with selectinload instead of N+1 per item/case.
+    Single commit at the end instead of one per add/delete.
+    """
+    warning_dict = {
+        'effect':          'Valve generated Noise is too High',
+        'action':          json.dumps(_get_warning_actions('Valve generated Noise is too High')),
+        'cause':           'Valve generated noise > Allowable Noise Limit',
+        'display_warning': 'High Noise',
+    }
+    CAUSE = 'Valve generated noise > Allowable Noise Limit'
+
+    items = (
+        db.session.query(itemMaster)
+        .options(
+            selectinload(itemMaster.case)
+            .selectinload(caseMaster.warning_)
+        )
+        .filter_by(projectID=proj_id)
+        .all()
+    )
+    for item in items:
+        for case in item.case:
+            if case.spl is None:
+                continue
+            existing_causes = {w.cause for w in case.warning_}
+            if case.spl > limit:
+                if CAUSE not in existing_causes:
+                    new_w = caseWarnings(case=case)
+                    db.session.add(new_w)
+                    db.session.flush()
+                    for k, v in warning_dict.items():
+                        setattr(new_w, k, v)
+            else:
+                for w in case.warning_:
+                    if w.cause == CAUSE:
+                        db.session.delete(w)
+    db.session.commit()
+
+
+def trim_warning_set_(proj_id: int, trim_: str) -> None:
+    """
+    Add or remove 'High Trim Velocity' caseWarnings rows for every case of
+    every item in the project, based on the trim_exit_velocity preference.
+
+    Optimized: 3 bulk queries with selectinload instead of N+1 per item/case.
+    Single commit at the end instead of one per add/delete.
+    """
+    trim_l_dict = {
+        'effect':          'Liquid Trim Exit Velocity is too High',
+        'action':          json.dumps(_get_warning_actions('Liquid Trim Exit Velocity is too High')),
+        'cause':           'Trim Exit Velocity > 30 m/s',
+        'display_warning': 'High Trim Velocity',
+    }
+    trim_g_dict = {
+        'effect':          'Gas Trim Exit Velocity is too High',
+        'action':          json.dumps(_get_warning_actions('Gas Trim Exit Velocity is too High')),
+        'cause':           'Trim Exit Velocity > 70 psi',
+        'display_warning': 'High Trim Velocity',
+    }
+    DISPLAY = 'High Trim Velocity'
+
+    items = (
+        db.session.query(itemMaster)
+        .options(
+            selectinload(itemMaster.valve).selectinload(valveDetailsMaster.state),
+            selectinload(itemMaster.case).selectinload(caseMaster.warning_),
+        )
+        .filter_by(projectID=proj_id)
+        .all()
+    )
+    for item in items:
+        fluid_type = item.valve[0].state.name if item.valve else None
+
+        for case in item.case:
+            if trim_ == 'yes':
+                if fluid_type == 'Liquid' and case.tex and case.tex > 30:
+                    warn_dict = trim_l_dict
+                elif fluid_type == 'Gas' and case.tex and case.tex > 70:
+                    warn_dict = trim_g_dict
+                else:
+                    continue
+
+                existing_displays = {w.display_warning for w in case.warning_}
+                if DISPLAY not in existing_displays:
+                    new_w = caseWarnings(case=case)
+                    db.session.add(new_w)
+                    db.session.flush()
+                    for k, v in warn_dict.items():
+                        setattr(new_w, k, v)
+
+            elif trim_ == 'no':
+                for w in case.warning_:
+                    if w.display_warning == DISPLAY:
+                        db.session.delete(w)
+    db.session.commit()
