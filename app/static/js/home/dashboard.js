@@ -398,7 +398,7 @@ function submitProject() {
                     } else if (response.reason === 'no_drafts') {
                         Swal.fire({
                             title: 'No drafts available to submit the project',
-                            text: 'Submit one draft and Try again !',
+                            text: 'Complete one draft and Try again !',
                             confirmButtonText: 'Ok',
                             customClass: { container: 'swal-custom' }
                         });

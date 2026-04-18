@@ -108,6 +108,7 @@ def register():
             department=department_element,
         )
         new_user.fccUser = request.form['email'].split('@')[-1] == 'fccommune.com'
+        new_user.projType = 1 if new_user.fccUser else None
 
         db.session.add(new_user)
         db.session.commit()
